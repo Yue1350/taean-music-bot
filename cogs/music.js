@@ -35,15 +35,15 @@ module.exports = {
         const distube = interaction.client.distube;
 
         if (subcommand === '재생') {
-            const query = interaction.options.getString('검색어');
-
             if (!voiceChannel) {
-                return interaction.reply({ content: '먼저 음성 채널에 들어가 있어야 해!', ephemeral: true });
+                return interaction.reply({ content: '먼저 음성 채널에 들어가 있어야 해!', flags: 64 });
             }
 
+            // 3초 제한을 피하기 위해 즉시 응답 지연 처리
             await interaction.deferReply();
 
             try {
+                const query = interaction.options.getString('검색어');
                 await distube.play(voiceChannel, query, {
                     textChannel: interaction.channel,
                     member: interaction.member,
@@ -59,13 +59,15 @@ module.exports = {
                 }
             } catch (error) {
                 console.error(error);
-                await interaction.editReply('노래를 재생하는 동안 오류가 발생했어. (봇 IP 차단 혹은 잘못된 링크일 수 있어)');
+                if (interaction.deferred || interaction.replied) {
+                    await interaction.editReply('노래를 재생하는 동안 오류가 발생했어. (봇 IP 차단 혹은 잘못된 링크일 수 있어)');
+                }
             }
         } 
         else {
             const queue = distube.getQueue(interaction.guild.id);
             if (!queue) {
-                return interaction.reply({ content: '현재 재생 중인 음악이 없어!', ephemeral: true });
+                return interaction.reply({ content: '현재 재생 중인 음악이 없어!', flags: 64 });
             }
 
             if (subcommand === '일시정지') {
@@ -81,7 +83,7 @@ module.exports = {
                     await queue.skip();
                     await interaction.reply('⏭️ 노래를 건너뛰었어!');
                 } catch {
-                    await interaction.reply({ content: '다음 곡이 없어서 스킵할 수 없어!', ephemeral: true });
+                    await interaction.reply({ content: '다음 곡이 없어서 스킵할 수 없어!', flags: 64 });
                 }
             } 
             else if (subcommand === '정지') {
