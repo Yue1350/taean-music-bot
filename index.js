@@ -1,4 +1,6 @@
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { DisTube } = require('distube');
+const { YtDlpPlugin } = require('@distube/yt-dlp');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
@@ -12,9 +14,15 @@ const client = new Client({
     ]
 });
 
+// DisTube 플레이어 설정 (yt-dlp 플러그인 연결)
+client.distube = new DisTube(client, {
+    emitNewSongOnly: true,
+    leaveOnFinish: true,
+    plugins: [new YtDlpPlugin()]
+});
+
 client.commands = new Collection();
 
-// cogs 폴더에서 명령어 파일 불러오기
 const cogsPath = path.join(__dirname, 'cogs');
 const commandFiles = fs.readdirSync(cogsPath).filter(file => file.endsWith('.js'));
 
@@ -28,8 +36,6 @@ for (const file of commandFiles) {
 
 client.once('ready', async () => {
     console.log(`로그인 완료: ${client.user.tag}`);
-
-    // 슬래시 명령어 등록
     const commands = client.commands.map(cmd => cmd.data.toJSON());
     await client.application.commands.set(commands);
     console.log('슬래시 명령어 등록 완료!');
