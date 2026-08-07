@@ -2,7 +2,8 @@ require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const { LavalinkManager } = require('lavalink-client');
 const express = require('express');
-const { setupMusicEvents, handleMessage, handleInteraction } = require('./music.js');
+// cogs 폴더 안의 music.js를 가져오도록 경로 수정!
+const { setupMusicEvents, handleMessage, handleInteraction } = require('./cogs/music.js');
 
 // --- 1. Render 배포 유지용 웹 서버 ---
 const app = express();
