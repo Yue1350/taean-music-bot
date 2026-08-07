@@ -1,10 +1,11 @@
-const { SlashCommandBuilder, REST, Routes, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, AttachmentBuilder, MessageFlags, ActivityType } = require('discord.js');
+const { SlashCommandBuilder, REST, Routes, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, AttachmentBuilder, MessageFlags, ActivityType, StringSelectMenuBuilder } = require('discord.js');
 
 const musicChannels = new Map();
 const idleMessageMap = new Map();
 const queueMessageMap = new Map();
 const playerIntervals = new Map();
 const isUpdatingMap = new Map(); // 중복 메시지 처리 방지 Lock
+const currentFilterMap = new Map(); // 길드별 현재 적용된 필터 이름 저장
 
 function createProgressBar(current, total) {
     const size = 15;
@@ -25,13 +26,13 @@ function getDisabledButtons() {
         new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪').setDisabled(true),
         new ButtonBuilder().setCustomId('music_pause').setStyle(ButtonStyle.Secondary).setEmoji('⏸️').setDisabled(true),
         new ButtonBuilder().setCustomId('music_next').setStyle(ButtonStyle.Secondary).setEmoji('⏭️').setDisabled(true),
-        new ButtonBuilder().setCustomId('music_loop').setStyle(ButtonStyle.Secondary).setEmoji('🔁').setDisabled(true),
         new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(true)
     );
 
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('music_vol_down').setStyle(ButtonStyle.Secondary).setEmoji('➖').setDisabled(true),
-        new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setDisabled(true)
+        new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setDisabled(true),
+        new ButtonBuilder().setCustomId('music_filter_menu').setStyle(ButtonStyle.Secondary).setEmoji('🎛️').setDisabled(true)
     );
 
     return [row1, row2];
@@ -53,6 +54,7 @@ async function updateIdleMessage(channel, cleanAll = false) {
             } while (fetched && fetched.size >= 2);
             idleMessageMap.delete(channel.guild.id);
             queueMessageMap.delete(channel.guild.id);
+            currentFilterMap.delete(channel.guild.id);
         }
 
         let qMsgId = queueMessageMap.get(channel.guild.id);
@@ -139,13 +141,8 @@ async function updatePlayerMessage(player, client) {
         const displayVolume = Math.round(player.volume * 2);
         const trackUrl = currentTrack.info.uri || 'https://discord.com';
 
-        // 반복 상태 텍스트 설정 (이모티콘 제거)
-        let loopStatusText = 'OFF';
-        if (player.repeatMode === 'track') {
-            loopStatusText = '한 곡 반복';
-        } else if (player.repeatMode === 'queue') {
-            loopStatusText = '전체 반복';
-        }
+        // 현재 필터 상태 가져오기
+        const activeFilter = currentFilterMap.get(guild.id) || '일반 (OFF)';
 
         const playEmbed = new EmbedBuilder()
             .setColor('#5865F2')
@@ -154,7 +151,7 @@ async function updatePlayerMessage(player, client) {
             .addFields(
                 { name: '👤 신청자', value: `<@${currentTrack.requester.id}>`, inline: true },
                 { name: '🔊 볼륨', value: `${displayVolume}%`, inline: true },
-                { name: '🔁 반복 모드', value: loopStatusText, inline: true },
+                { name: '🎛️ 필터 효과', value: activeFilter, inline: true },
                 { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false }
             )
             .setImage(artwork || null);
@@ -164,14 +161,14 @@ async function updatePlayerMessage(player, client) {
             new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪').setDisabled(false),
             new ButtonBuilder().setCustomId('music_pause').setStyle(player.paused ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji(player.paused ? '▶️' : '⏸️').setDisabled(false),
             new ButtonBuilder().setCustomId('music_next').setStyle(ButtonStyle.Secondary).setEmoji('⏭️').setDisabled(false),
-            new ButtonBuilder().setCustomId('music_loop').setStyle(player.repeatMode === 'queue' || player.repeatMode === 'track' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji(player.repeatMode === 'track' ? '🔂' : '🔁').setDisabled(false),
             new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(false)
         );
 
-        // 두 번째 버튼 줄 (볼륨 -, 볼륨 + 이모티콘 전용)
+        // 두 번째 버튼 줄 (볼륨 -, 볼륨 +, 필터 선택)
         const row2 = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('music_vol_down').setStyle(ButtonStyle.Secondary).setEmoji('➖').setDisabled(false),
-            new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setDisabled(false)
+            new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setDisabled(false),
+            new ButtonBuilder().setCustomId('music_filter_menu').setStyle(ButtonStyle.Secondary).setEmoji('🎛️').setDisabled(false)
         );
 
         let msgId = idleMessageMap.get(guild.id);
@@ -244,6 +241,7 @@ module.exports = {
                         playerIntervals.delete(oldState.guild.id);
                     }
                     player.destroy();
+                    currentFilterMap.delete(oldState.guild.id);
                     const channelId = musicChannels.get(oldState.guild.id);
                     if (channelId) {
                         const channel = oldState.guild.channels.cache.get(channelId);
@@ -267,6 +265,7 @@ module.exports = {
                                 playerIntervals.delete(oldState.guild.id);
                             }
                             player.destroy();
+                            currentFilterMap.delete(oldState.guild.id);
                             const channelId = musicChannels.get(oldState.guild.id);
                             if (channelId) {
                                 const channel = oldState.guild.channels.cache.get(channelId);
@@ -377,16 +376,80 @@ module.exports = {
             }
         });
 
+        // 버튼 및 셀렉트 메뉴 인터랙션 처리
         client.on('interactionCreate', async interaction => {
+            // 🎛️ 필터 선택 메뉴(드롭다운) 처리
+            if (interaction.isStringSelectMenu() && interaction.customId === 'filter_select_menu') {
+                const player = client.lavalink.getPlayer(interaction.guild.id);
+                if (!player) return interaction.reply({ content: '재생 중인 플레이어가 없습니다.', flags: [MessageFlags.Ephemeral] });
+
+                const selectedFilter = interaction.values[0];
+                await interaction.deferUpdate();
+
+                if (selectedFilter === 'clear') {
+                    if (player.filterManager) await player.filterManager.clearFilter();
+                    currentFilterMap.set(interaction.guild.id, '일반 (OFF)');
+                } else if (selectedFilter === 'bassboost') {
+                    if (player.filterManager) {
+                        await player.filterManager.setEqualizer([
+                            { band: 0, gain: 0.2 },
+                            { band: 1, gain: 0.15 },
+                            { band: 2, gain: 0.1 }
+                        ]);
+                    }
+                    currentFilterMap.set(interaction.guild.id, '🔊 베이스 보스트');
+                } else if (selectedFilter === 'nightcore') {
+                    if (player.filterManager) {
+                        await player.filterManager.setTimescale({ speed: 1.25, pitch: 1.25, rate: 1.0 });
+                    }
+                    currentFilterMap.set(interaction.guild.id, '⚡ 나이트코어');
+                } else if (selectedFilter === 'vaporwave') {
+                    if (player.filterManager) {
+                        await player.filterManager.setTimescale({ speed: 0.85, pitch: 0.8, rate: 1.0 });
+                    }
+                    currentFilterMap.set(interaction.guild.id, '🌊 바포웨이브');
+                } else if (selectedFilter === 'rotation') {
+                    if (player.filterManager) {
+                        await player.filterManager.setRotation({ rotationHz: 0.2 });
+                    }
+                    currentFilterMap.set(interaction.guild.id, '🎧 3D 회전 오디오');
+                }
+
+                await updatePlayerMessage(player, client);
+                return;
+            }
+
             if (!interaction.isButton()) return;
             const validButtons = [
-                'music_prev', 'music_pause', 'music_next', 'music_loop', 'music_stop',
-                'music_vol_down', 'music_vol_up'
+                'music_prev', 'music_pause', 'music_next', 'music_stop',
+                'music_vol_down', 'music_vol_up', 'music_filter_menu'
             ];
             if (!validButtons.includes(interaction.customId)) return;
 
             const player = client.lavalink.getPlayer(interaction.guild.id);
             if (!player) return interaction.reply({ content: '재생 중인 플레이어가 없습니다.', flags: [MessageFlags.Ephemeral] });
+
+            // 필터 선택 메뉴 버튼 클릭 시 (나에게만 보이는 개인 메시지 전송)
+            if (interaction.customId === 'music_filter_menu') {
+                const filterSelect = new StringSelectMenuBuilder()
+                    .setCustomId('filter_select_menu')
+                    .setPlaceholder('원하는 음향 필터를 선택해 주세요!')
+                    .addOptions([
+                        { label: '일반 (필터 해제)', value: 'clear', description: '기존 음향 효과를 모두 끕니다.', emoji: '❌' },
+                        { label: '베이스 보스트', value: 'bassboost', description: '저음(Bass)을 더욱 강하고 묵직하게 만듭니다.', emoji: '🔊' },
+                        { label: '나이트코어', value: 'nightcore', description: '재생 속도와 피치를 높여 신나게 만듭니다.', emoji: '⚡' },
+                        { label: '바포웨이브', value: 'vaporwave', description: '재생 속도를 낮추고 감성적인 느낌을 줍니다.', emoji: '🌊' },
+                        { label: '3D 회전 오디오', value: 'rotation', description: '소리가 입체적으로 회전하는 효과를 줍니다.', emoji: '🎧' }
+                    ]);
+
+                const selectRow = new ActionRowBuilder().addComponents(filterSelect);
+
+                return interaction.reply({
+                    content: '🎛️ **음향 효과(이퀄라이저) 선택**\n적용하고 싶은 필터를 아래 목록에서 골라주세요!',
+                    components: [selectRow],
+                    flags: [MessageFlags.Ephemeral]
+                });
+            }
 
             await interaction.deferUpdate();
 
@@ -404,20 +467,13 @@ module.exports = {
                 }
             } else if (interaction.customId === 'music_next') {
                 player.skip();
-            } else if (interaction.customId === 'music_loop') {
-                if (player.repeatMode === 'off') {
-                    player.setRepeatMode('queue');
-                } else if (player.repeatMode === 'queue') {
-                    player.setRepeatMode('track');
-                } else {
-                    player.setRepeatMode('off');
-                }
             } else if (interaction.customId === 'music_stop') {
                 if (playerIntervals.has(interaction.guild.id)) {
                     clearInterval(playerIntervals.get(interaction.guild.id));
                     playerIntervals.delete(interaction.guild.id);
                 }
                 player.destroy();
+                currentFilterMap.delete(interaction.guild.id);
                 const channel = interaction.channel;
                 await updateIdleMessage(channel);
                 return;
@@ -452,6 +508,7 @@ module.exports = {
                 }
                 
                 player.destroy();
+                currentFilterMap.delete(player.guildId);
                 
                 const guild = client.guilds.cache.get(player.guildId);
                 if (guild) {
