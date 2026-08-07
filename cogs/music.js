@@ -6,7 +6,7 @@ const queueMessageMap = new Map();
 const playerIntervals = new Map();
 const isUpdatingMap = new Map();
 const currentFilterMap = new Map();
-const activeLyricsUsersMap = new Map(); // 사용자별 가사 토글 상태 저장
+const activeLyricsUsersMap = new Map();
 
 function createProgressBar(current, total) {
     const size = 15;
@@ -30,7 +30,6 @@ function getDisabledButtons() {
         new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(true)
     );
 
-    // 필터(🎛️)와 음량-(➖) 사이에 가사(📜) 버튼 배치
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('music_filter_menu').setStyle(ButtonStyle.Secondary).setEmoji('🎛️').setDisabled(true),
         new ButtonBuilder().setCustomId('music_lyrics_toggle').setStyle(ButtonStyle.Secondary).setEmoji('📜').setDisabled(true),
@@ -98,19 +97,16 @@ async function fetchTrackLyrics(player, client) {
     const node = client.lavalink.nodeManager.nodes.first();
     if (!node) return null;
 
-    // 1. LavaLyrics REST 요청 시도 (/v4/sessions/{sessionId}/players/{guildId}/lyrics)
-    try {
-        const res = await node.rest.get(`v4/sessions/${node.sessionId}/players/${player.guildId}/lyrics`).catch(() => null);
-        if (res && (res.text || res.lines)) return res;
-    } catch (e) {}
-
-    // 2. lyrics.kt (v4/lyrics) REST API 요청 시도
+    // Lyrics.kt (v4/lyrics) REST API 호출
     try {
         const currentTrack = player.queue.current;
         if (currentTrack?.info?.title) {
             const encodedTitle = encodeURIComponent(currentTrack.info.title);
             const res = await node.rest.get(`v4/lyrics/search?query=${encodedTitle}`).catch(() => null);
-            if (res && res.length > 0) return res[0];
+            if (res) {
+                if (Array.isArray(res) && res.length > 0) return res[0];
+                if (res.text || res.lines) return res;
+            }
         }
     } catch (e) {}
 
@@ -188,7 +184,6 @@ async function updatePlayerMessage(player, client) {
             new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(false)
         );
 
-        // 필터(🎛️)와 음량-(➖) 사이에 가사 토글(📜) 버튼 배치
         const row2 = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('music_filter_menu').setStyle(ButtonStyle.Secondary).setEmoji('🎛️').setDisabled(false),
             new ButtonBuilder().setCustomId('music_lyrics_toggle').setStyle(ButtonStyle.Secondary).setEmoji('📜').setDisabled(false),
@@ -507,7 +502,6 @@ async function handleInteraction(client, interaction) {
     const player = client.lavalink.getPlayer(interaction.guild.id);
     if (!player) return interaction.reply({ content: '재생 중인 플레이어가 없습니다.', flags: [MessageFlags.Ephemeral] });
 
-    // 📜 실시간 가사 토글 버튼 클릭 시
     if (interaction.customId === 'music_lyrics_toggle') {
         const userKey = `${interaction.guild.id}_${interaction.user.id}`;
         const isLyricsActive = activeLyricsUsersMap.get(userKey) || false;
@@ -544,7 +538,7 @@ async function handleInteraction(client, interaction) {
             }
         }
 
-        return interaction.editReply('해당 곡의 실시간 가사를 찾을 수 없어요 😢');
+        return interaction.editReply('해당 곡의 가사를 찾을 수 없어요 😢');
     }
 
     if (interaction.customId === 'music_filter_menu') {
