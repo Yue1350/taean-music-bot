@@ -64,12 +64,12 @@ async function updatePlayerMessage(player, client) {
     const progressBar = createProgressBar(position, duration);
     const timeText = `[${formatTime(position)} / ${formatTime(duration)}]`;
 
-    // 유튜브 썸네일 추출 로직
+    // 16:9 비율 고화질 유튜브 썸네일 추출 로직 (maxresdefault.jpg)
     let artwork = currentTrack.info.artworkUrl;
-    if (!artwork && currentTrack.info.uri) {
+    if (currentTrack.info.uri) {
         const urlMatch = currentTrack.info.uri.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
         if (urlMatch && urlMatch[1]) {
-            artwork = `https://img.youtube.com/vi/${urlMatch[1]}/hqdefault.jpg`;
+            artwork = `https://img.youtube.com/vi/${urlMatch[1]}/maxresdefault.jpg`;
         }
     }
 
@@ -253,7 +253,13 @@ module.exports = {
             const res = await player.search({ query, requester: message.author }, message.author);
             if (!res.tracks.length) return;
 
-            player.queue.add(res.tracks[0]);
+            // 플레이리스트인지 일반 단일 곡인지 구분하여 처리
+            if (res.loadType === 'playlist') {
+                player.queue.add(res.tracks);
+            } else {
+                player.queue.add(res.tracks[0]);
+            }
+
             if (!player.playing && !player.paused) player.play();
 
             await updatePlayerMessage(player, client);
