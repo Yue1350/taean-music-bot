@@ -17,9 +17,14 @@ function initLavalink(client) {
                 secure: false
             }
         ],
-        send: (guildId, payload) => {
+        // 기존 send 대신 sendToShard로 변경!
+        sendToShard: (guildId, payload) => {
             const guild = client.guilds.cache.get(guildId);
             if (guild) guild.shard.send(payload);
+        },
+        client: {
+            id: client.user?.id,
+            username: client.user?.username
         }
     });
 }
