@@ -143,7 +143,7 @@ async function updatePlayerMessage(player, client) {
             .setTitle(`🎵 ${currentTrack.info.title}`)
             .setURL(trackUrl)
             .addFields(
-                { name: '👤 신청자', value: `<@${currentTrack.requester.id}>`, inline: true },
+                { name: '👤 신청자', value: `<@${currentTrack.requester?.id || currentTrack.requester}>`, inline: true },
                 { name: '🔊 볼륨', value: `${displayVolume}%`, inline: true },
                 { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false }
             )
@@ -324,11 +324,11 @@ async function handleMessage(client, message) {
         });
     }
 
-    if (!player.connected) player.connect();
+    if (!player.connected) await player.connect();
 
     try {
-        // 수정된 부분: client.lavalink.search 사용
-        const res = await client.lavalink.search({ query }, message.author);
+        // player.search 메서드를 이용하여 음원 검색
+        const res = await player.search({ query }, message.author);
 
         if (!res || !res.tracks || !res.tracks.length) return;
 
@@ -338,7 +338,7 @@ async function handleMessage(client, message) {
             player.queue.add(res.tracks[0]);
         }
 
-        if (!player.playing && !player.paused) player.play();
+        if (!player.playing && !player.paused) await player.play();
 
         await updatePlayerMessage(player, client);
 
