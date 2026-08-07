@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, REST, Routes, PermissionFlagsBits, ChannelType, MessageFlags } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, PermissionFlagsBits, ChannelType, MessageFlags, SlashCommandBuilder } = require('discord.js');
 const { initLavalink, musicChannels } = require('./cogs/musicManager');
 const { handleButtonAndSelect } = require('./cogs/musicButtons');
 const { setupMusicEvents, handleMessage, updatePlayerMessage } = require('./cogs/music');
@@ -17,7 +17,7 @@ client.once('ready', () => {
     initLavalink(client);
     client.lavalink.init(client.user.id);
     
-    // 음악 이벤트 및 슬래시 명령어 등록
+    // 음악 이벤트 등록
     setupMusicEvents(client);
     
     console.log(`봇 로그인 완료: ${client.user.tag}`);
