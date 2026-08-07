@@ -327,16 +327,13 @@ async function handleMessage(client, message) {
     if (!player.connected) player.connect();
 
     try {
-        let res;
-        if (query.startsWith('spsearch:') || query.startsWith('amsearch:') || query.startsWith('dzsearch:') || query.startsWith('ymsearch:')) {
-            res = await player.search({ query, requester: message.author }, message.author);
-        } else if (player.lavasearch) {
-            res = await player.lavasearch.search({ query, types: ['track', 'album', 'playlist'] }, message.author);
-        } else {
-            res = await player.search({ query, requester: message.author }, message.author);
-        }
+        // 수정된 부분: lavalink-client REST API를 사용하여 검색
+        const res = await client.lavalink.rest.resolve(query);
 
         if (!res || !res.tracks || !res.tracks.length) return;
+
+        // requester 정보를 수동으로 추가
+        res.tracks[0].requester = message.author;
 
         if (res.loadType === 'playlist' || res.loadType === 'album') {
             player.queue.add(res.tracks);
