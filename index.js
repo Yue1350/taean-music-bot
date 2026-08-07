@@ -1,6 +1,20 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { LavalinkManager } = require('lavalink-client');
+const express = require('express'); // 1. Express 추가
+
+const app = express();
+const PORT = process.env.PORT || 3000; // 2. Render가 부여하는 PORT 사용
+
+// Render의 헬스 체크를 위한 단순 HTTP 응답
+app.get('/', (req, res) => {
+    res.send('Discord Bot is running!');
+});
+
+// 3. 0.0.0.0 바인딩으로 포트 열어주기
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`HTTP 서버가 포트 ${PORT}에서 실행 중입니다.`);
+});
 
 const client = new Client({
     intents: [
