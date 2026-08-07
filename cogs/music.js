@@ -48,6 +48,39 @@ function getDisabledButtons() {
     return [row1, row2];
 }
 
+// 봇이 채널을 나갈 때 플레이어 및 대기열 메모리를 완전 초기화하는 함수
+async function hardResetGuildPlayer(guildId, client) {
+    // 1. 타이머 제거
+    if (playerIntervals.has(guildId)) {
+        clearInterval(playerIntervals.get(guildId));
+        playerIntervals.delete(guildId);
+    }
+
+    // 2. 플레이어 파괴 및 대기열 비우기
+    const player = client.lavalink.getPlayer(guildId);
+    if (player) {
+        try {
+            if (player.queue) {
+                if (typeof player.queue.clear === 'function') player.queue.clear();
+                else if (Array.isArray(player.queue.tracks)) player.queue.tracks = [];
+            }
+        } catch (e) {}
+        player.destroy();
+    }
+
+    // 3. UI 및 채널 상태 초기화
+    const channelId = musicChannels.get(guildId);
+    if (channelId) {
+        const guild = client.guilds.cache.get(guildId);
+        if (guild) {
+            const channel = guild.channels.cache.get(channelId);
+            if (channel) {
+                await updateIdleMessage(channel);
+            }
+        }
+    }
+}
+
 async function updateIdleMessage(channel, cleanAll = false) {
     try {
         if (cleanAll) {
@@ -229,45 +262,18 @@ function setupMusicEvents(client) {
     });
 
     client.lavalink.on('queueEnd', async (player) => {
-        setTimeout(async () => {
-            if (!player.playing && player.queue.tracks.length === 0) {
-                if (playerIntervals.has(player.guildId)) {
-                    clearInterval(playerIntervals.get(player.guildId));
-                    playerIntervals.delete(player.guildId);
-                }
-                
-                player.destroy();
-                
-                const guild = client.guilds.cache.get(player.guildId);
-                if (guild) {
-                    const channelId = musicChannels.get(guild.id);
-                    if (channelId) {
-                        const channel = guild.channels.cache.get(channelId);
-                        if (channel) await updateIdleMessage(channel);
-                    }
-                }
-            }
-        }, 1000);
+        // 대기열 노래가 모두 끝나면 완전 초기화
+        await hardResetGuildPlayer(player.guildId, client);
     });
 
     client.on('voiceStateUpdate', async (oldState, newState) => {
+        // 1. 봇 자신이 음성 방에서 나간 경우 -> 무조건 완전 초기화
         if (oldState.member.id === client.user.id && !newState.channelId) {
-            const player = client.lavalink.getPlayer(oldState.guild.id);
-            if (player) {
-                if (playerIntervals.has(oldState.guild.id)) {
-                    clearInterval(playerIntervals.get(oldState.guild.id));
-                    playerIntervals.delete(oldState.guild.id);
-                }
-                player.destroy();
-                const channelId = musicChannels.get(oldState.guild.id);
-                if (channelId) {
-                    const channel = oldState.guild.channels.cache.get(channelId);
-                    if (channel) await updateIdleMessage(channel);
-                }
-            }
+            await hardResetGuildPlayer(oldState.guild.id, client);
             return;
         }
 
+        // 2. 일반 유저가 나갔고, 봇 혼자 남아있는 경우 -> 즉시 퇴장 및 초기화
         if (oldState.channelId && !newState.channelId) {
             const botChannelId = oldState.guild.members.me?.voice.channelId;
             if (botChannelId && oldState.channelId === botChannelId) {
@@ -275,19 +281,7 @@ function setupMusicEvents(client) {
                 const members = voiceChannel ? voiceChannel.members.filter(m => !m.user.bot) : [];
                 
                 if (members.size === 0) {
-                    const player = client.lavalink.getPlayer(oldState.guild.id);
-                    if (player) {
-                        if (playerIntervals.has(oldState.guild.id)) {
-                            clearInterval(playerIntervals.get(oldState.guild.id));
-                            playerIntervals.delete(oldState.guild.id);
-                        }
-                        player.destroy();
-                        const channelId = musicChannels.get(oldState.guild.id);
-                        if (channelId) {
-                            const channel = oldState.guild.channels.cache.get(channelId);
-                            if (channel) await updateIdleMessage(channel);
-                        }
-                    }
+                    await hardResetGuildPlayer(oldState.guild.id, client);
                 }
             }
         }
@@ -340,6 +334,8 @@ async function handleMessage(client, message) {
     }
 
     let player = client.lavalink.getPlayer(message.guild.id);
+
+    // 플레이어가 존재하지 않는 경우 (새로 재생) -> 이전 상태 무시하고 새로 연결
     if (!player) {
         player = client.lavalink.createPlayer({
             guildId: message.guild.id,
@@ -473,13 +469,8 @@ async function handleInteraction(client, interaction) {
             player.repeatMode = nextMode;
         }
     } else if (interaction.customId === 'music_stop') {
-        if (playerIntervals.has(interaction.guild.id)) {
-            clearInterval(playerIntervals.get(interaction.guild.id));
-            playerIntervals.delete(interaction.guild.id);
-        }
-        player.destroy();
-        const channel = interaction.channel;
-        await updateIdleMessage(channel);
+        // 정지 버튼 누르면 즉시 초기화 후 대기 상태 전환
+        await hardResetGuildPlayer(interaction.guild.id, client);
         return;
     } else if (interaction.customId === 'music_vol_down') {
         const currentDisplayVol = Math.round(player.volume * 2);
