@@ -327,13 +327,10 @@ async function handleMessage(client, message) {
     if (!player.connected) player.connect();
 
     try {
-        // 수정된 부분: lavalink-client REST API를 사용하여 검색
-        const res = await client.lavalink.rest.resolve(query);
+        // 수정된 부분: client.lavalink.search 사용
+        const res = await client.lavalink.search({ query }, message.author);
 
         if (!res || !res.tracks || !res.tracks.length) return;
-
-        // requester 정보를 수동으로 추가
-        res.tracks[0].requester = message.author;
 
         if (res.loadType === 'playlist' || res.loadType === 'album') {
             player.queue.add(res.tracks);
