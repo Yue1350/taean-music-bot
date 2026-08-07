@@ -2,13 +2,14 @@ const { SlashCommandBuilder, REST, Routes, PermissionFlagsBits, EmbedBuilder, Ac
 
 const musicChannels = new Map();
 const idleMessageMap = new Map();
+const queueMessageMap = new Map(); // 대기열 메시지 ID 저장용 Map
 const playerIntervals = new Map();
 
 function createProgressBar(current, total) {
-    const size = 15;
+    const size = 12;
     const progress = Math.min(Math.max(current / total, 0), 1);
     const pos = Math.round(progress * size);
-    return '▬'.repeat(pos) + '🔘' + '▬'.repeat(size - pos);
+    return '➖'.repeat(pos) + '🔘' + '➖'.repeat(size - pos);
 }
 
 function formatTime(ms) {
@@ -35,6 +36,7 @@ async function updateIdleMessage(channel) {
 
         const sentMsg = await channel.send({ embeds: [idleEmbed], files: [file] });
         idleMessageMap.set(channel.guild.id, sentMsg.id);
+        queueMessageMap.delete(channel.guild.id);
     } catch (e) {
         console.error(e);
     }
@@ -51,12 +53,13 @@ async function updatePlayerMessage(player, client) {
     const currentTrack = player.queue.current;
     if (!currentTrack) return;
 
+    // 대기열 텍스트 생성
     const queueTracks = player.queue;
-    let queueText = '대기열에 노래가 없습니다.';
+    let queueText = '📜 **[ 대기열 목록 ]**\n대기열에 다음 노래가 없습니다.';
     if (queueTracks.length > 0) {
         const list = queueTracks.slice(0, 5).map((t, i) => `${i + 1}. **${t.info.title}**`).join('\n');
         const remaining = queueTracks.length - 5;
-        queueText = list + (remaining > 0 ? `\n외 ${remaining}곡` : '');
+        queueText = `📜 **[ 대기열 목록 ]**\n${list}` + (remaining > 0 ? `\n*외 ${remaining}곡*` : '');
     }
 
     const position = player.position;
@@ -64,7 +67,7 @@ async function updatePlayerMessage(player, client) {
     const progressBar = createProgressBar(position, duration);
     const timeText = `[${formatTime(position)} / ${formatTime(duration)}]`;
 
-    // 16:9 비율 고화질 유튜브 썸네일 추출 로직 (maxresdefault.jpg)
+    // 16:9 비율 고화질 유튜브 썸네일 추출
     let artwork = currentTrack.info.artworkUrl;
     if (currentTrack.info.uri) {
         const urlMatch = currentTrack.info.uri.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
@@ -78,10 +81,8 @@ async function updatePlayerMessage(player, client) {
         .setTitle(`🎵 ${currentTrack.info.title}`)
         .addFields(
             { name: '👤 신청자', value: `<@${currentTrack.requester.id}>`, inline: true },
-            { name: '🎤 아티스트', value: `${currentTrack.info.author || '알 수 없음'}`, inline: true },
             { name: '🔊 볼륨', value: `${player.volume}%`, inline: true },
-            { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false },
-            { name: '📜 대기열 목록', value: queueText, inline: false }
+            { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false }
         )
         .setImage(artwork || null);
 
@@ -93,6 +94,7 @@ async function updatePlayerMessage(player, client) {
         new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️')
     );
 
+    // 1. 메인 플레이어 임베드 메시지 업데이트
     let msgId = idleMessageMap.get(guild.id);
     let msg = null;
     if (msgId) {
@@ -104,6 +106,20 @@ async function updatePlayerMessage(player, client) {
     } else {
         const sent = await channel.send({ embeds: [playEmbed], components: [row] });
         idleMessageMap.set(guild.id, sent.id);
+    }
+
+    // 2. 대기열 목록을 별도의 일반 메시지로 전송/업데이트
+    let qMsgId = queueMessageMap.get(guild.id);
+    let qMsg = null;
+    if (qMsgId) {
+        try { qMsg = await channel.messages.fetch(qMsgId); } catch (e) {}
+    }
+
+    if (qMsg) {
+        await qMsg.edit({ content: queueText }).catch(() => {});
+    } else {
+        const sentQueue = await channel.send({ content: queueText });
+        queueMessageMap.set(guild.id, sentQueue.id);
     }
 }
 
@@ -136,7 +152,6 @@ module.exports = {
             console.error(error);
         }
 
-        // 음성 채널 상태 변경 감지 (모두 나가면 봇 퇴장)
         client.on('voiceStateUpdate', async (oldState, newState) => {
             if (oldState.member.id === client.user.id && !newState.channelId) {
                 const player = client.lavalink.getPlayer(oldState.guild.id);
@@ -161,7 +176,6 @@ module.exports = {
                     const voiceChannel = oldState.guild.channels.cache.get(botChannelId);
                     const members = voiceChannel ? voiceChannel.members.filter(m => !m.user.bot) : [];
                     
-                    // 사용자가 다 나간 경우에만 봇이 퇴장
                     if (members.size === 0) {
                         const player = client.lavalink.getPlayer(oldState.guild.id);
                         if (player) {
@@ -253,7 +267,6 @@ module.exports = {
             const res = await player.search({ query, requester: message.author }, message.author);
             if (!res.tracks.length) return;
 
-            // 플레이리스트인지 일반 단일 곡인지 구분하여 처리
             if (res.loadType === 'playlist') {
                 player.queue.add(res.tracks);
             } else {
