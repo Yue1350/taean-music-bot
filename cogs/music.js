@@ -20,6 +20,17 @@ function formatTime(ms) {
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 }
 
+function getLoopStatusText(player) {
+    const mode = player.loop || player.repeatMode || (player.trackRepeat ? 'track' : player.queueRepeat ? 'queue' : 'off');
+    
+    if (mode === 'track' || mode === 'song' || mode === 1) {
+        return '🔂 한곡 반복';
+    } else if (mode === 'queue' || mode === 'all' || mode === 2) {
+        return '🔁 전체 반복';
+    }
+    return '➡️ off';
+}
+
 function getDisabledButtons() {
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪').setDisabled(true),
@@ -111,7 +122,6 @@ async function updatePlayerMessage(player, client) {
             .setTitle('📜 대기열 목록');
 
         if (queueTracks.length > 0) {
-            // 숫자는 볼드 처리(**1.**), 노래 제목은 일반 텍스트
             const list = queueTracks.slice(0, 5).map((t, i) => {
                 const reqId = t.requester?.id || t.requester;
                 const requesterText = reqId ? ` (신청자: <@${reqId}>)` : '';
@@ -152,6 +162,7 @@ async function updatePlayerMessage(player, client) {
             .addFields(
                 { name: '👤 신청자', value: currentReqId ? `<@${currentReqId}>` : '알 수 없음', inline: true },
                 { name: '🔊 볼륨', value: `${displayVolume}%`, inline: true },
+                { name: '🔄 반복 모드', value: getLoopStatusText(player), inline: true },
                 { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false }
             )
             .setImage(artwork || null);
