@@ -19,24 +19,48 @@ function formatTime(ms) {
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 }
 
+function getDisabledButtons() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪').setDisabled(true),
+        new ButtonBuilder().setCustomId('music_pause').setStyle(ButtonStyle.Secondary).setEmoji('⏸️').setDisabled(true),
+        new ButtonBuilder().setCustomId('music_next').setStyle(ButtonStyle.Secondary).setEmoji('⏭️').setDisabled(true),
+        new ButtonBuilder().setCustomId('music_loop').setStyle(ButtonStyle.Secondary).setEmoji('🔁').setDisabled(true),
+        new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(true)
+    );
+}
+
 async function updateIdleMessage(channel) {
     try {
-        const fetchedMessages = await channel.messages.fetch({ limit: 100 });
-        if (fetchedMessages.size > 0) {
-            await channel.bulkDelete(fetchedMessages, true).catch(() => {});
-        }
-
         const idleEmbed = new EmbedBuilder()
             .setColor('#2b2d31')
-            .setTitle('🎵 음악이 재생 중이지 않습니다')
-            .setDescription('노래의 제목이나 링크를 채팅에 보내주세요!')
+            .setTitle('🎵 현재 노래가 재생 중이지 않습니다')
             .setImage('attachment://music_idle.png');
 
         const file = new AttachmentBuilder('./assets/music_idle.png');
+        const disabledRow = getDisabledButtons();
 
-        const sentMsg = await channel.send({ embeds: [idleEmbed], files: [file] });
-        idleMessageMap.set(channel.guild.id, sentMsg.id);
-        queueMessageMap.delete(channel.guild.id);
+        // 대기열 메시지가 있다면 삭제
+        let qMsgId = queueMessageMap.get(channel.guild.id);
+        if (qMsgId) {
+            try {
+                const qMsg = await channel.messages.fetch(qMsgId);
+                if (qMsg) await qMsg.delete().catch(() => {});
+            } catch (e) {}
+            queueMessageMap.delete(channel.guild.id);
+        }
+
+        let msgId = idleMessageMap.get(channel.guild.id);
+        let msg = null;
+        if (msgId) {
+            try { msg = await channel.messages.fetch(msgId); } catch (e) {}
+        }
+
+        if (msg) {
+            await msg.edit({ embeds: [idleEmbed], components: [disabledRow], files: [file] }).catch(() => {});
+        } else {
+            const sentMsg = await channel.send({ embeds: [idleEmbed], components: [disabledRow], files: [file] });
+            idleMessageMap.set(channel.guild.id, sentMsg.id);
+        }
     } catch (e) {
         console.error(e);
     }
@@ -54,11 +78,16 @@ async function updatePlayerMessage(player, client) {
     if (!currentTrack) return;
 
     const queueTracks = player.queue;
-    let queueText = '📜 **[ 대기열 목록 ]**\n대기열에 다음 노래가 없습니다.';
+    const queueEmbed = new EmbedBuilder()
+        .setColor('#2b2d31')
+        .setTitle('📜 대기열 목록');
+
     if (queueTracks.length > 0) {
         const list = queueTracks.slice(0, 5).map((t, i) => `${i + 1}. **[${t.info.title}](${t.info.uri || '#'})**`).join('\n');
         const remaining = queueTracks.length - 5;
-        queueText = `📜 **[ 대기열 목록 ]**\n${list}` + (remaining > 0 ? `\n*외 ${remaining}곡*` : '');
+        queueEmbed.setDescription(list + (remaining > 0 ? `\n\n*외 ${remaining}곡*` : ''));
+    } else {
+        queueEmbed.setDescription('대기열에 다음 노래가 없어!');
     }
 
     const position = player.position;
@@ -90,11 +119,11 @@ async function updatePlayerMessage(player, client) {
         .setImage(artwork || null);
 
     const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪'),
-        new ButtonBuilder().setCustomId('music_pause').setStyle(player.paused ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('⏸️'),
-        new ButtonBuilder().setCustomId('music_next').setStyle(ButtonStyle.Secondary).setEmoji('⏭️'),
-        new ButtonBuilder().setCustomId('music_loop').setStyle(player.repeatMode === 'queue' || player.repeatMode === 'track' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji(player.repeatMode === 'track' ? '🔂' : '🔁'),
-        new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️')
+        new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪').setDisabled(false),
+        new ButtonBuilder().setCustomId('music_pause').setStyle(player.paused ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('⏸️').setDisabled(false),
+        new ButtonBuilder().setCustomId('music_next').setStyle(ButtonStyle.Secondary).setEmoji('⏭️').setDisabled(false),
+        new ButtonBuilder().setCustomId('music_loop').setStyle(player.repeatMode === 'queue' || player.repeatMode === 'track' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji(player.repeatMode === 'track' ? '🔂' : '🔁').setDisabled(false),
+        new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(false)
     );
 
     let msgId = idleMessageMap.get(guild.id);
@@ -117,9 +146,9 @@ async function updatePlayerMessage(player, client) {
     }
 
     if (qMsg) {
-        await qMsg.edit({ content: queueText }).catch(() => {});
+        await qMsg.edit({ content: null, embeds: [queueEmbed] }).catch(() => {});
     } else {
-        const sentQueue = await channel.send({ content: queueText });
+        const sentQueue = await channel.send({ embeds: [queueEmbed] });
         queueMessageMap.set(guild.id, sentQueue.id);
     }
 }
@@ -360,12 +389,21 @@ module.exports = {
             await updatePlayerMessage(player, client);
         });
 
+        client.lavalink.on('trackStart', async (player) => {
+            await updatePlayerMessage(player, client);
+        });
+
+        client.lavalink.on('trackAdd', async (player) => {
+            await updatePlayerMessage(player, client);
+        });
+
         client.lavalink.on('trackEnd', async (player) => {
             if (!player.queue.current) {
                 if (playerIntervals.has(player.guildId)) {
                     clearInterval(playerIntervals.get(player.guildId));
                     playerIntervals.delete(player.guildId);
                 }
+                player.destroy();
                 const guild = client.guilds.cache.get(player.guildId);
                 if (guild) {
                     const channelId = musicChannels.get(guild.id);
