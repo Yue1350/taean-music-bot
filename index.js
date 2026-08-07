@@ -1,7 +1,7 @@
 const { Client, GatewayIntentBits, REST, Routes, PermissionFlagsBits, ChannelType, MessageFlags, SlashCommandBuilder } = require('discord.js');
 const { initLavalink, musicChannels } = require('./cogs/musicManager');
 const { handleButtonAndSelect } = require('./cogs/musicButtons');
-const { setupMusicEvents, handleMessage, updatePlayerMessage } = require('./cogs/music');
+const { setupMusicEvents, handleMessage, updatePlayerMessage, updateIdleMessage } = require('./cogs/music');
 
 const client = new Client({
     intents: [
@@ -88,8 +88,8 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // 버튼 및 필터 셀렉트 메뉴 처리 위임
-    await handleButtonAndSelect(client, interaction, updatePlayerMessage);
+    // 버튼 및 필터 셀렉트 메뉴 처리 위임 (updatePlayerMessage와 updateIdleMessage 모두 전달)
+    await handleButtonAndSelect(client, interaction, updatePlayerMessage, updateIdleMessage);
 });
 
 client.login(process.env.DISCORD_TOKEN);
