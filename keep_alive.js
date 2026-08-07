@@ -6,10 +6,10 @@ function keepAlive() {
         res.end('Bot is running!');
     });
 
-    const PORT = process.env.PORT || 8080;
+    const PORT = 8080;
     
     server.listen(PORT, '0.0.0.0', () => {
-        console.log(`웹 서버가 포트 ${PORT}번에서 실행 중이야!`);
+        console.log(`웹 서버가 포트 8080번에서 실행 중이야!`);
     });
 }
 
