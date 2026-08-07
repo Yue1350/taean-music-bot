@@ -1,7 +1,6 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { LavalinkManager } = require('lavalink-client');
-const path = require('path');
 
 const client = new Client({
     intents: [
@@ -14,7 +13,7 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// Lavalink 매니저 설정 (send -> sendToShard 수정 완료)
+// Lavalink 매니저 설정
 client.lavalink = new LavalinkManager({
     nodes: [
         {
@@ -36,13 +35,15 @@ client.lavalink = new LavalinkManager({
     defaultSearchEngine: 'youtube'
 });
 
-// music.js Cog 로드 및 연결
+// music.js Cog 로드
 const musicCog = require('./cogs/music.js');
-musicCog.init(client);
 
 client.on('ready', async () => {
     console.log(`로그인 완료: ${client.user.tag}`);
     client.lavalink.init(client.user.id);
+    
+    // 봇이 켜진 직후에 명령어가 등록되도록 ready 이벤트 안으로 이동
+    musicCog.init(client);
 });
 
 client.on('raw', data => client.lavalink.sendRawData(data));
