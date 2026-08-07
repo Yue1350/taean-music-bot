@@ -1,16 +1,17 @@
-const keepAlive = require('./keep_alive');
+require('dotenv').config();
 
-// 웹 서버 실행 (봇이 안 꺼지게 유지용)
-keepAlive();
-
+const http = require('http');
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { DisTube } = require('distube');
 const { YtDlpPlugin } = require('@distube/yt-dlp');
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config();
 
-// 1. client 객체 생성
+// 1. 웹 서버 실행 (Render 등에서 안 꺼지게 유지)
+const keepAlive = require('./keep_alive');
+keepAlive();
+
+// 2. 디스코드 클라이언트 생성
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -20,7 +21,7 @@ const client = new Client({
     ]
 });
 
-// 2. DisTube 플레이어 설정
+// 3. DisTube 플레이어 설정
 client.distube = new DisTube(client, {
     emitNewSongOnly: true,
     leaveOnFinish: true,
@@ -29,7 +30,7 @@ client.distube = new DisTube(client, {
 
 client.commands = new Collection();
 
-// 3. cogs 폴더에서 명령어 불러오기
+// 4. cogs 폴더에서 명령어 불러오기
 const cogsPath = path.join(__dirname, 'cogs');
 const commandFiles = fs.readdirSync(cogsPath).filter(file => file.endsWith('.js'));
 
@@ -41,7 +42,7 @@ for (const file of commandFiles) {
     }
 }
 
-// 4. 봇 준비 완료 이벤트
+// 5. 봇 준비 완료 이벤트
 client.once('ready', async () => {
     console.log(`로그인 완료: ${client.user.tag}`);
     const commands = client.commands.map(cmd => cmd.data.toJSON());
@@ -49,7 +50,7 @@ client.once('ready', async () => {
     console.log('슬래시 명령어 등록 완료!');
 });
 
-// 5. 인터랙션(명령어) 실행 이벤트
+// 6. 인터랙션(명령어) 실행 이벤트
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -72,5 +73,5 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// 6. 봇 로그인
+// 7. 봇 로그인
 client.login(process.env.DISCORD_TOKEN);
