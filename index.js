@@ -1,7 +1,6 @@
 const { Client, GatewayIntentBits, REST, Routes, PermissionFlagsBits, ChannelType, MessageFlags } = require('discord.js');
-const { initLavalink, musicChannels, playerIntervals, currentFilterMap } = require('./cogs/musicManager');
+const { initLavalink, musicChannels } = require('./cogs/musicManager');
 const { handleButtonAndSelect } = require('./cogs/musicButtons');
-// 기존 music.js에 있던 메인 로직 함수들도 필요에 따라 가져오기
 const { setupMusicEvents, handleMessage, updatePlayerMessage } = require('./cogs/music');
 
 const client = new Client({
@@ -13,15 +12,44 @@ const client = new Client({
     ]
 });
 
-// 라바링크 초기화
-initLavalink(client);
-
-// 음악 이벤트 등록
-setupMusicEvents(client);
-
 client.once('ready', () => {
+    // 봇 로그인 후에 라바링크 초기화 및 시작
+    initLavalink(client);
     client.lavalink.init(client.user.id);
+    
+    // 음악 이벤트 및 슬래시 명령어 등록
+    setupMusicEvents(client);
+    
     console.log(`봇 로그인 완료: ${client.user.tag}`);
+});
+
+// 슬래시 명령어 등록 (음악채널)
+const commands = [
+    new SlashCommandBuilder()
+        .setName('음악채널')
+        .setDescription('음악 봇 전용 채널을 관리합니다.')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+        .addStringOption(option =>
+            option.setName('작업')
+                .setDescription('생성, 지정, 해제 중 선택하세요.')
+                .setRequired(true)
+                .addChoices(
+                    { name: '생성', value: '생성' },
+                    { name: '지정', value: '지정' },
+                    { name: '해제', value: '해제' }
+                ))
+];
+
+client.once('ready', async () => {
+    try {
+        if (client.user?.id) {
+            const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+            await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+            console.log('슬러시 명령어(음악채널) 등록 완료!');
+        }
+    } catch (error) {
+        console.error('슬래시 명령어 등록 실패:', error);
+    }
 });
 
 // 메시지(채팅 검색 및 재생) 처리
