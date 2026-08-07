@@ -114,9 +114,11 @@ async function updatePlayerMessage(player, client) {
         if (queueTracks.length > 0) {
             const list = queueTracks.slice(0, 5).map((t, i) => `${i + 1}. **${t.info.title}**`).join('\n');
             const remaining = queueTracks.length - 5;
-            const remainingText = remaining > 0 ? `\n\n*외 ${remaining}곡*` : '';
             
-            queueEmbed.setDescription(`${list}${remainingText}`);
+            queueEmbed.setDescription(list);
+            if (remaining > 0) {
+                queueEmbed.setFooter({ text: `외 ${remaining}곡` });
+            }
         } else {
             queueEmbed.setDescription('대기열에 다음 노래가 없습니다.');
         }
