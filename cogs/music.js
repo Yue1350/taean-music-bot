@@ -5,6 +5,7 @@ const idleMessageMap = new Map();
 const queueMessageMap = new Map();
 const playerIntervals = new Map();
 const isUpdatingMap = new Map();
+const queuePageMap = new Map(); // 서버별 대기열 페이지 상태 저장
 
 function createProgressBar(current, total) {
     const size = 14;
@@ -58,15 +59,14 @@ function getDisabledButtons() {
     return [row1, row2];
 }
 
-// 봇이 채널을 나갈 때 또는 정지 시 플레이어 및 대기열 메모리를 초기화하는 함수
 async function hardResetGuildPlayer(guildId, client) {
-    // 1. 타이머 제거
     if (playerIntervals.has(guildId)) {
         clearInterval(playerIntervals.get(guildId));
         playerIntervals.delete(guildId);
     }
 
-    // 2. 플레이어 파괴 및 대기열 비우기
+    queuePageMap.delete(guildId);
+
     const player = client.lavalink.getPlayer(guildId);
     if (player) {
         try {
@@ -78,7 +78,6 @@ async function hardResetGuildPlayer(guildId, client) {
         player.destroy();
     }
 
-    // 3. 기존 메인 메시지를 지우지 않고 Idle 상태로 Edit(수정) 업데이트
     const channelId = musicChannels.get(guildId);
     if (channelId) {
         const guild = client.guilds.cache.get(guildId);
@@ -109,7 +108,6 @@ async function updateIdleMessage(channel, cleanAll = false) {
             queueMessageMap.delete(channel.guild.id);
         }
 
-        // 대기열 메시지가 남아있다면 대기열 메시지만 지움
         let qMsgId = queueMessageMap.get(channel.guild.id);
         if (qMsgId) {
             try {
@@ -133,7 +131,6 @@ async function updateIdleMessage(channel, cleanAll = false) {
             try { msg = await channel.messages.fetch(msgId); } catch (e) {}
         }
 
-        // 기존 메인 메시지를 삭제하지 않고 내용만 수정(edit)
         if (msg) {
             await msg.edit({ embeds: [idleEmbed], components: disabledRows, files: [file] }).catch(() => {});
         } else {
@@ -161,30 +158,53 @@ async function updatePlayerMessage(player, client) {
         const currentTrack = player.queue.current;
         if (!currentTrack) return;
 
+        // --- 1. 대기열 임베드 및 대기열 전용 버튼 구성 ---
         const queueTracks = player.queue.tracks || Array.from(player.queue) || [];
+        const itemsPerPage = 5;
+        const totalPages = Math.ceil(queueTracks.length / itemsPerPage) || 1;
+        
+        let currentPage = queuePageMap.get(guild.id) || 1;
+        if (currentPage > totalPages) currentPage = totalPages;
+        if (currentPage < 1) currentPage = 1;
+        queuePageMap.set(guild.id, currentPage);
 
         const queueEmbed = new EmbedBuilder()
             .setColor('#2b2d31')
             .setTitle('📜 대기열 목록');
 
         if (queueTracks.length > 0) {
-            const list = queueTracks.slice(0, 5).map((t, i) => {
+            const startIdx = (currentPage - 1) * itemsPerPage;
+            const endIdx = startIdx + itemsPerPage;
+            const currentQueuePage = queueTracks.slice(startIdx, endIdx);
+
+            const list = currentQueuePage.map((t, i) => {
                 const reqId = t.requester?.id || t.requester;
                 const requesterText = reqId ? ` (신청자: <@${reqId}>)` : '';
                 const cleanTitle = escapeMarkdown(t.info.title);
-                return `**${i + 1}.** ${cleanTitle}${requesterText}`;
+                return `**${startIdx + i + 1}.** ${cleanTitle}${requesterText}`;
             }).join('\n\n');
 
-            const remaining = queueTracks.length - 5;
-            
             queueEmbed.setDescription(list);
-            if (remaining > 0) {
-                queueEmbed.setFooter({ text: `외 ${remaining}곡` });
-            }
+            queueEmbed.setFooter({ text: `페이지 ${currentPage} / ${totalPages} (총 ${queueTracks.length}곡)` });
         } else {
             queueEmbed.setDescription('대기열에 다음 노래가 없습니다.');
         }
 
+        // 대기열 목록 메시지에 달릴 전용 버튼 (이전/다음 페이지)
+        const queueRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('queue_page_prev')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('◀️')
+                .setDisabled(currentPage <= 1),
+            new ButtonBuilder()
+                .setCustomId('queue_page_next')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('▶️')
+                .setDisabled(currentPage >= totalPages)
+        );
+
+        // --- 2. 메인 플레이어 임베드 및 버튼 구성 ---
         const position = player.position;
         const duration = currentTrack.info.duration;
         const progressBar = createProgressBar(position, duration);
@@ -235,6 +255,7 @@ async function updatePlayerMessage(player, client) {
             new ButtonBuilder().setCustomId('music_clear_queue').setStyle(ButtonStyle.Danger).setEmoji('🗑️').setDisabled(false)
         );
 
+        // 메인 플레이어 메시지 전송/수정
         let msgId = idleMessageMap.get(guild.id);
         let msg = null;
         if (msgId) {
@@ -248,6 +269,7 @@ async function updatePlayerMessage(player, client) {
             idleMessageMap.set(guild.id, sent.id);
         }
 
+        // 대기열 메시지 전송/수정 (대기열 전용 버튼 포함)
         let qMsgId = queueMessageMap.get(guild.id);
         let qMsg = null;
         if (qMsgId) {
@@ -255,9 +277,9 @@ async function updatePlayerMessage(player, client) {
         }
 
         if (qMsg) {
-            await qMsg.edit({ embeds: [queueEmbed] }).catch(() => {});
+            await qMsg.edit({ embeds: [queueEmbed], components: [queueRow] }).catch(() => {});
         } else {
-            const sentQueue = await channel.send({ embeds: [queueEmbed] });
+            const sentQueue = await channel.send({ embeds: [queueEmbed], components: [queueRow] });
             queueMessageMap.set(guild.id, sentQueue.id);
         }
     } finally {
@@ -430,11 +452,10 @@ async function handleInteraction(client, interaction) {
     if (!interaction.isButton()) return;
     const validButtons = [
         'music_prev', 'music_pause', 'music_next', 'music_loop', 'music_stop',
-        'music_vol_down', 'music_vol_up', 'music_clear_queue'
+        'music_vol_down', 'music_vol_up', 'queue_page_prev', 'queue_page_next', 'music_clear_queue'
     ];
     if (!validButtons.includes(interaction.customId)) return;
 
-    // 🔒 정지 및 대기열 청소 버튼 클릭 시 관리자 권한 검사
     if (interaction.customId === 'music_stop' || interaction.customId === 'music_clear_queue') {
         const member = interaction.member;
         const hasAdmin = member?.permissions?.has(PermissionFlagsBits.ManageGuild) || 
@@ -503,6 +524,12 @@ async function handleInteraction(client, interaction) {
         const currentDisplayVol = Math.round(player.volume * 2);
         const newDisplayVol = Math.min(100, currentDisplayVol + 10);
         player.setVolume(Math.round(newDisplayVol / 2));
+    } else if (interaction.customId === 'queue_page_prev') {
+        const currentPage = queuePageMap.get(interaction.guild.id) || 1;
+        queuePageMap.set(interaction.guild.id, Math.max(1, currentPage - 1));
+    } else if (interaction.customId === 'queue_page_next') {
+        const currentPage = queuePageMap.get(interaction.guild.id) || 1;
+        queuePageMap.set(interaction.guild.id, currentPage + 1);
     } else if (interaction.customId === 'music_clear_queue') {
         if (player.queue) {
             if (typeof player.queue.clear === 'function') {
@@ -511,6 +538,7 @@ async function handleInteraction(client, interaction) {
                 player.queue.tracks = [];
             }
         }
+        queuePageMap.set(interaction.guild.id, 1);
     }
 
     await updatePlayerMessage(player, client);
