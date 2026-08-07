@@ -13,11 +13,20 @@ function createProgressBar(current, total) {
     return '➖'.repeat(pos) + '🔘' + '➖'.repeat(size - pos);
 }
 
+// 1시간 이상 영상 대응 (HH:MM:SS / MM:SS)
 function formatTime(ms) {
     const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+
+    const formattedMinutes = minutes < 10 && hours > 0 ? `0${minutes}` : `${minutes}`;
+    const formattedSeconds = seconds < 10 ? `0${seconds}` : `${seconds}`;
+
+    if (hours > 0) {
+        return `${hours}:${formattedMinutes}:${formattedSeconds}`;
+    }
+    return `${formattedMinutes}:${formattedSeconds}`;
 }
 
 function getLoopStatusText(player) {
@@ -42,13 +51,14 @@ function getDisabledButtons() {
 
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('music_vol_down').setStyle(ButtonStyle.Secondary).setEmoji('➖').setDisabled(true),
-        new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setDisabled(true)
+        new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setDisabled(true),
+        new ButtonBuilder().setCustomId('music_clear_queue').setStyle(ButtonStyle.Danger).setEmoji('🗑️').setDisabled(true)
     );
 
     return [row1, row2];
 }
 
-// 봇이 채널을 나갈 때 플레이어 및 대기열 메모리를 완전 초기화하는 함수
+// 봇이 채널을 나갈 때 또는 정지 시 플레이어 및 대기열 메모리를 초기화하는 함수
 async function hardResetGuildPlayer(guildId, client) {
     // 1. 타이머 제거
     if (playerIntervals.has(guildId)) {
@@ -68,7 +78,7 @@ async function hardResetGuildPlayer(guildId, client) {
         player.destroy();
     }
 
-    // 3. UI 및 채널 상태 초기화
+    // 3. 기존 메인 메시지를 지우지 않고 Idle 상태로 Edit(수정) 업데이트
     const channelId = musicChannels.get(guildId);
     if (channelId) {
         const guild = client.guilds.cache.get(guildId);
@@ -99,6 +109,7 @@ async function updateIdleMessage(channel, cleanAll = false) {
             queueMessageMap.delete(channel.guild.id);
         }
 
+        // 대기열 메시지가 남아있다면 대기열 메시지만 지움
         let qMsgId = queueMessageMap.get(channel.guild.id);
         if (qMsgId) {
             try {
@@ -122,6 +133,7 @@ async function updateIdleMessage(channel, cleanAll = false) {
             try { msg = await channel.messages.fetch(msgId); } catch (e) {}
         }
 
+        // 기존 메인 메시지를 삭제하지 않고 내용만 수정(edit)
         if (msg) {
             await msg.edit({ embeds: [idleEmbed], components: disabledRows, files: [file] }).catch(() => {});
         } else {
@@ -219,7 +231,8 @@ async function updatePlayerMessage(player, client) {
 
         const row2 = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('music_vol_down').setStyle(ButtonStyle.Secondary).setEmoji('➖').setDisabled(false),
-            new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setDisabled(false)
+            new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setDisabled(false),
+            new ButtonBuilder().setCustomId('music_clear_queue').setStyle(ButtonStyle.Danger).setEmoji('🗑️').setDisabled(false)
         );
 
         let msgId = idleMessageMap.get(guild.id);
@@ -262,18 +275,15 @@ function setupMusicEvents(client) {
     });
 
     client.lavalink.on('queueEnd', async (player) => {
-        // 대기열 노래가 모두 끝나면 완전 초기화
         await hardResetGuildPlayer(player.guildId, client);
     });
 
     client.on('voiceStateUpdate', async (oldState, newState) => {
-        // 1. 봇 자신이 음성 방에서 나간 경우 -> 무조건 완전 초기화
         if (oldState.member.id === client.user.id && !newState.channelId) {
             await hardResetGuildPlayer(oldState.guild.id, client);
             return;
         }
 
-        // 2. 일반 유저가 나갔고, 봇 혼자 남아있는 경우 -> 즉시 퇴장 및 초기화
         if (oldState.channelId && !newState.channelId) {
             const botChannelId = oldState.guild.members.me?.voice.channelId;
             if (botChannelId && oldState.channelId === botChannelId) {
@@ -335,7 +345,6 @@ async function handleMessage(client, message) {
 
     let player = client.lavalink.getPlayer(message.guild.id);
 
-    // 플레이어가 존재하지 않는 경우 (새로 재생) -> 이전 상태 무시하고 새로 연결
     if (!player) {
         player = client.lavalink.createPlayer({
             guildId: message.guild.id,
@@ -421,9 +430,24 @@ async function handleInteraction(client, interaction) {
     if (!interaction.isButton()) return;
     const validButtons = [
         'music_prev', 'music_pause', 'music_next', 'music_loop', 'music_stop',
-        'music_vol_down', 'music_vol_up'
+        'music_vol_down', 'music_vol_up', 'music_clear_queue'
     ];
     if (!validButtons.includes(interaction.customId)) return;
+
+    // 🔒 정지 및 대기열 청소 버튼 클릭 시 관리자 권한 검사
+    if (interaction.customId === 'music_stop' || interaction.customId === 'music_clear_queue') {
+        const member = interaction.member;
+        const hasAdmin = member?.permissions?.has(PermissionFlagsBits.ManageGuild) || 
+                         member?.permissions?.has(PermissionFlagsBits.Administrator);
+
+        if (!hasAdmin) {
+            const actionText = interaction.customId === 'music_stop' ? '음악을 정지할' : '대기열을 청소할';
+            return interaction.reply({ 
+                content: `❌ 관리자 권한이 있는 사용자만 ${actionText} 수 있습니다.`, 
+                flags: [MessageFlags.Ephemeral] 
+            });
+        }
+    }
 
     const player = client.lavalink.getPlayer(interaction.guild.id);
     if (!player) {
@@ -469,7 +493,6 @@ async function handleInteraction(client, interaction) {
             player.repeatMode = nextMode;
         }
     } else if (interaction.customId === 'music_stop') {
-        // 정지 버튼 누르면 즉시 초기화 후 대기 상태 전환
         await hardResetGuildPlayer(interaction.guild.id, client);
         return;
     } else if (interaction.customId === 'music_vol_down') {
@@ -480,6 +503,14 @@ async function handleInteraction(client, interaction) {
         const currentDisplayVol = Math.round(player.volume * 2);
         const newDisplayVol = Math.min(100, currentDisplayVol + 10);
         player.setVolume(Math.round(newDisplayVol / 2));
+    } else if (interaction.customId === 'music_clear_queue') {
+        if (player.queue) {
+            if (typeof player.queue.clear === 'function') {
+                player.queue.clear();
+            } else if (Array.isArray(player.queue.tracks)) {
+                player.queue.tracks = [];
+            }
+        }
     }
 
     await updatePlayerMessage(player, client);
