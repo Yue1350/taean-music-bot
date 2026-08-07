@@ -98,8 +98,9 @@ async function updatePlayerMessage(player, client) {
         const currentTrack = player.queue.current;
         if (!currentTrack) return;
 
-        // 1. 대기열 Embed 생성
-        const queueTracks = player.queue;
+        // 1. 대기열 배열 추출 (Lavalink 버전 완벽 대응)
+        const queueTracks = player.queue.tracks || Array.from(player.queue) || [];
+
         const queueEmbed = new EmbedBuilder()
             .setColor('#2b2d31')
             .setTitle('📜 대기열 목록');
@@ -134,7 +135,7 @@ async function updatePlayerMessage(player, client) {
             .setTitle(`🎵 ${currentTrack.info.title}`)
             .setURL(trackUrl)
             .addFields(
-                { name: '\u200b', value: '\u200b', inline: false },
+                { name: '\u200b', value: '\u200b', inline: true },
                 { name: '👤 신청자', value: `<@${currentTrack.requester.id}>`, inline: true },
                 { name: '🔊 볼륨', value: `${displayVolume}%`, inline: true },
                 { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false }
