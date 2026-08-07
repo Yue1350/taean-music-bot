@@ -44,10 +44,13 @@ client.lavalink = new LavalinkManager({
 // --- 4. 이벤트 및 모듈 등록 ---
 setupMusicEvents(client);
 
+// 디스코드 음성 연결 상태 패킷을 라바링크로 보류 없이 전달해 주는 필수 이벤트
+client.on("raw", (d) => client.lavalink.sendRawData(d));
+
 client.once('ready', async () => {
     console.log(`[Bot] ${client.user.tag} 로 로그인 완료!`);
 
-    // Lavalink 매니저 초기화 시 client.user 전체 전달
+    // Lavalink 매니저 초기화 시 client.user 객체 전달
     await client.lavalink.init(client.user);
 });
 
