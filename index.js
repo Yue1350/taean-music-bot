@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, PermissionFlagsBits, SlashCommandBuilder } = require('discord.js');
 const { LavalinkManager } = require('lavalink-client');
 const { setupMusicEvents, handleMessage, handleInteraction } = require('./cogs/music');
 
@@ -44,13 +44,40 @@ client.lavalink = new LavalinkManager({
 // --- 4. 이벤트 및 모듈 등록 ---
 setupMusicEvents(client);
 
-// 디스코드 음성 연결 상태 패킷을 라바링크로 보류 없이 전달해 주는 필수 이벤트
 client.on("raw", (d) => client.lavalink.sendRawData(d));
 
 client.once('ready', async () => {
     console.log(`[Bot] ${client.user.tag} 로 로그인 완료!`);
 
-    // Lavalink 매니저 초기화 시 client.user 객체 전달
+    // 💡 [핵심] 봇이 켜질 때 '음악채널' 슬래시 명령어를 디스코드에 강제 등록합니다.
+    const commands = [
+        new SlashCommandBuilder()
+            .setName('음악채널')
+            .setDescription('음악 봇 전용 채널을 관리합니다.')
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+            .addStringOption(option =>
+                option.setName('작업')
+                    .setDescription('생성, 지정, 해제 중 선택하세요.')
+                    .setRequired(true)
+                    .addChoices(
+                        { name: '생성', value: '생성' },
+                        { name: '지정', value: '지정' },
+                        { name: '해제', value: '해제' }
+                    ))
+    ];
+
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+    try {
+        console.log('[Bot] 슬래시 명령어 등록 중...');
+        await rest.put(
+            Routes.applicationCommands(client.user.id),
+            { body: commands },
+        );
+        console.log('[Bot] 슬래시 명령어 등록 완료!');
+    } catch (error) {
+        console.error('슬래시 명령어 등록 실패:', error);
+    }
+
     await client.lavalink.init(client.user);
 });
 
