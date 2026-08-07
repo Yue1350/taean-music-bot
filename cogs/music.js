@@ -116,7 +116,6 @@ async function updatePlayerMessage(player, client) {
             const remaining = queueTracks.length - 5;
             const remainingText = remaining > 0 ? `\n\n*외 ${remaining}곡*` : '';
             
-            // 대기열 목록과 '외 N곡'을 임베드 설명(Description)에 통합 설정
             queueEmbed.setDescription(`${list}${remainingText}`);
         } else {
             queueEmbed.setDescription('대기열에 다음 노래가 없습니다.');
@@ -158,7 +157,7 @@ async function updatePlayerMessage(player, client) {
             new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(false)
         );
 
-        // 두 번째 버튼 줄 (볼륨 -, 볼륨 +)
+        // 두 번째 버튼 줄 (볼륨 -, 볼륨 + 이모티콘 전용)
         const row2 = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('music_vol_down').setStyle(ButtonStyle.Secondary).setEmoji('➖').setDisabled(false),
             new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setDisabled(false)
@@ -436,12 +435,14 @@ module.exports = {
                 await updateIdleMessage(channel);
                 return;
             } else if (interaction.customId === 'music_vol_down') {
+                // UI 수치(1~100) 기준 10% 감소 (내부 volume은 1~50 기준)
                 const currentDisplayVol = Math.round(player.volume * 2);
-                const newDisplayVol = Math.max(0, currentDisplayVol - 4);
+                const newDisplayVol = Math.max(0, currentDisplayVol - 10);
                 player.setVolume(Math.round(newDisplayVol / 2));
             } else if (interaction.customId === 'music_vol_up') {
+                // UI 수치(1~100) 기준 10% 증가 (내부 volume은 1~50 기준)
                 const currentDisplayVol = Math.round(player.volume * 2);
-                const newDisplayVol = Math.min(100, currentDisplayVol + 4);
+                const newDisplayVol = Math.min(100, currentDisplayVol + 10);
                 player.setVolume(Math.round(newDisplayVol / 2));
             }
 
