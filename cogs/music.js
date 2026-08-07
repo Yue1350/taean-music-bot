@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, REST, Routes, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, AttachmentBuilder, MessageFlags } = require('discord.js');
+
 const musicChannels = new Map();
 const idleMessageMap = new Map();
 const playerIntervals = new Map();
@@ -63,7 +64,15 @@ async function updatePlayerMessage(player, client) {
     const progressBar = createProgressBar(position, duration);
     const timeText = `[${formatTime(position)} / ${formatTime(duration)}]`;
 
-    // 스크린샷 레이아웃 맞춤 디자인
+    // 유튜브 썸네일 추출 로직
+    let artwork = currentTrack.info.artworkUrl;
+    if (!artwork && currentTrack.info.uri) {
+        const urlMatch = currentTrack.info.uri.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+        if (urlMatch && urlMatch[1]) {
+            artwork = `https://img.youtube.com/vi/${urlMatch[1]}/hqdefault.jpg`;
+        }
+    }
+
     const playEmbed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle(`🎵 ${currentTrack.info.title}`)
@@ -74,7 +83,7 @@ async function updatePlayerMessage(player, client) {
             { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false },
             { name: '📜 대기열 목록', value: queueText, inline: false }
         )
-        .setImage(currentTrack.info.artworkUrl || currentTrack.info.uri);
+        .setImage(artwork || null);
 
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪'),
@@ -127,6 +136,51 @@ module.exports = {
             console.error(error);
         }
 
+        // 음성 채널 상태 변경 감지 (모두 나가면 봇 퇴장)
+        client.on('voiceStateUpdate', async (oldState, newState) => {
+            if (oldState.member.id === client.user.id && !newState.channelId) {
+                const player = client.lavalink.getPlayer(oldState.guild.id);
+                if (player) {
+                    if (playerIntervals.has(oldState.guild.id)) {
+                        clearInterval(playerIntervals.get(oldState.guild.id));
+                        playerIntervals.delete(oldState.guild.id);
+                    }
+                    player.destroy();
+                    const channelId = musicChannels.get(oldState.guild.id);
+                    if (channelId) {
+                        const channel = oldState.guild.channels.cache.get(channelId);
+                        if (channel) await updateIdleMessage(channel);
+                    }
+                }
+                return;
+            }
+
+            if (oldState.channelId && !newState.channelId) {
+                const botChannelId = oldState.guild.members.me?.voice.channelId;
+                if (botChannelId && oldState.channelId === botChannelId) {
+                    const voiceChannel = oldState.guild.channels.cache.get(botChannelId);
+                    const members = voiceChannel ? voiceChannel.members.filter(m => !m.user.bot) : [];
+                    
+                    // 사용자가 다 나간 경우에만 봇이 퇴장
+                    if (members.size === 0) {
+                        const player = client.lavalink.getPlayer(oldState.guild.id);
+                        if (player) {
+                            if (playerIntervals.has(oldState.guild.id)) {
+                                clearInterval(playerIntervals.get(oldState.guild.id));
+                                playerIntervals.delete(oldState.guild.id);
+                            }
+                            player.destroy();
+                            const channelId = musicChannels.get(oldState.guild.id);
+                            if (channelId) {
+                                const channel = oldState.guild.channels.cache.get(channelId);
+                                if (channel) await updateIdleMessage(channel);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
         client.on('interactionCreate', async interaction => {
             if (!interaction.isChatInputCommand()) return;
             if (interaction.commandName !== '음악채널') return;
@@ -135,7 +189,7 @@ module.exports = {
             const action = options.getString('작업');
 
             if (action === '생성') {
-                await interaction.deferReply({ ephemeral: true });
+                await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
                 try {
                     const newChannel = await guild.channels.create({
                         name: '🎵-음악-채널',
@@ -153,19 +207,19 @@ module.exports = {
             if (action === '지정') {
                 const targetChannel = interaction.channel;
                 if (targetChannel.type !== ChannelType.GuildText) {
-                    return interaction.reply({ content: '텍스트 채널에서만 지정할 수 있어!', ephemeral: true });
+                    return interaction.reply({ content: '텍스트 채널에서만 지정할 수 있어!', flags: [MessageFlags.Ephemeral] });
                 }
                 musicChannels.set(guild.id, targetChannel.id);
                 await updateIdleMessage(targetChannel);
-                return interaction.reply({ content: `현재 채널을 음악 채널로 지정했어! 👉 <#${targetChannel.id}>`, ephemeral: true });
+                return interaction.reply({ content: `현재 채널을 음악 채널로 지정했어! 👉 <#${targetChannel.id}>`, flags: [MessageFlags.Ephemeral] });
             }
 
             if (action === '해제') {
                 if (!musicChannels.has(guild.id)) {
-                    return interaction.reply({ content: '현재 지정된 음악 채널이 없어.', ephemeral: true });
+                    return interaction.reply({ content: '현재 지정된 음악 채널이 없어.', flags: [MessageFlags.Ephemeral] });
                 }
                 musicChannels.delete(guild.id);
-                return interaction.reply({ content: '음악 채널 지정을 해제했어!', ephemeral: true });
+                return interaction.reply({ content: '음악 채널 지정을 해제했어!', flags: [MessageFlags.Ephemeral] });
             }
         });
 
@@ -218,7 +272,7 @@ module.exports = {
             if (!['music_prev', 'music_pause', 'music_next', 'music_loop', 'music_stop'].includes(interaction.customId)) return;
 
             const player = client.lavalink.getPlayer(interaction.guild.id);
-            if (!player) return interaction.reply({ content: '재생 중인 플레이어가 없어.', ephemeral: true });
+            if (!player) return interaction.reply({ content: '재생 중인 플레이어가 없어.', flags: [MessageFlags.Ephemeral] });
 
             await interaction.deferUpdate();
 
@@ -231,7 +285,7 @@ module.exports = {
             } else if (interaction.customId === 'music_pause') {
                 player.pause(!player.paused);
             } else if (interaction.customId === 'music_next') {
-                player.stop();
+                player.skip();
             } else if (interaction.customId === 'music_loop') {
                 if (player.repeatMode === 'off') {
                     player.setRepeatMode('queue');
