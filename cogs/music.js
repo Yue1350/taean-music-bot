@@ -1,95 +1,79 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, REST, Routes } = require('discord.js');
 
 module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('음악')
-        .setDescription('유튜브 음악을 재생합니다.')
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('재생')
-                .setDescription('유튜브 노래를 재생합니다.')
-                .addStringOption(option =>
-                    option.setName('검색어')
-                        .setDescription('유튜브 링크 또는 검색어')
-                        .setRequired(true)))
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('일시정지')
-                .setDescription('재생 중인 노래를 일시정지합니다.'))
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('다시시작')
-                .setDescription('일시정지된 노래를 다시 재생합니다.'))
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('스킵')
-                .setDescription('현재 노래를 건너뜁니다.'))
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('정지')
-                .setDescription('노래를 멈추고 봇을 음성 채널에서 내보냅니다.')),
+    name: 'music',
+    description: '음악 재생 관련 명령어',
+    
+    // 봇이 켜질 때 슬러시 명령어를 등록하는 함수
+    async init(client) {
+        const commands = [
+            new SlashCommandBuilder()
+                .setName('play')
+                .setDescription('노래를 재생합니다.')
+                .addStringOption(option => 
+                    option.setName('query').setDescription('재생할 노래 제목 또는 URL').setRequired(true)),
+            new SlashCommandBuilder()
+                .setName('skip')
+                .setDescription('현재 노래를 스킵합니다.')
+        ];
 
-    async execute(interaction) {
-        const subcommand = interaction.options.getSubcommand();
-        const voiceChannel = interaction.member.voice.channel;
-        const distube = interaction.client.distube;
-
-        if (subcommand === '재생') {
-            if (!voiceChannel) {
-                return interaction.reply({ content: '먼저 음성 채널에 들어가 있어야 해!', flags: 64 });
-            }
-
-            // 3초 제한을 피하기 위해 즉시 응답 지연 처리
-            await interaction.deferReply();
-
-            try {
-                const query = interaction.options.getString('검색어');
-                await distube.play(voiceChannel, query, {
-                    textChannel: interaction.channel,
-                    member: interaction.member,
-                });
-                
-                const queue = distube.getQueue(interaction.guild.id);
-                const song = queue ? queue.songs[queue.songs.length - 1] : null;
-                
-                if (song) {
-                    await interaction.editReply(`🎶 **${song.name}** 재생을 시작할게!`);
-                } else {
-                    await interaction.editReply(`곡을 대기열에 추가했어!`);
-                }
-            } catch (error) {
-                console.error(error);
-                if (interaction.deferred || interaction.replied) {
-                    await interaction.editReply('노래를 재생하는 동안 오류가 발생했어. (봇 IP 차단 혹은 잘못된 링크일 수 있어)');
-                }
-            }
-        } 
-        else {
-            const queue = distube.getQueue(interaction.guild.id);
-            if (!queue) {
-                return interaction.reply({ content: '현재 재생 중인 음악이 없어!', flags: 64 });
-            }
-
-            if (subcommand === '일시정지') {
-                queue.pause();
-                await interaction.reply('⏸️ 노래를 일시정지했어.');
-            } 
-            else if (subcommand === '다시시작') {
-                queue.resume();
-                await interaction.reply('▶️ 노래를 다시 시작할게.');
-            } 
-            else if (subcommand === '스킵') {
-                try {
-                    await queue.skip();
-                    await interaction.reply('⏭️ 노래를 건너뛰었어!');
-                } catch {
-                    await interaction.reply({ content: '다음 곡이 없어서 스킵할 수 없어!', flags: 64 });
-                }
-            } 
-            else if (subcommand === '정지') {
-                queue.stop();
-                await interaction.reply('⏹️ 노래를 멈추고 음성 채널에서 나갈게.');
-            }
+        const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+        try {
+            await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+            console.log('음악 슬러시 명령어 등록 완료!');
+        } catch (error) {
+            console.error(error);
         }
+
+        // 인터랙션 이벤트 처리 연결
+        client.on('interactionCreate', async interaction => {
+            if (!interaction.isChatInputCommand()) return;
+
+            const { commandName, options, guild, member } = interaction;
+            if (!guild) return;
+
+            if (commandName === 'play') {
+                const query = options.getString('query');
+                const voiceChannel = member.voice.channel;
+
+                if (!voiceChannel) {
+                    return interaction.reply({ content: '먼저 음성 채널에 들어가주세요!', ephemeral: true });
+                }
+
+                await interaction.deferReply();
+
+                let player = client.lavalink.getPlayer(guild.id);
+                if (!player) {
+                    player = client.lavalink.createPlayer({
+                        guildId: guild.id,
+                        voiceChannel: voiceChannel.id,
+                        textChannel: interaction.channel.id,
+                        selfDeaf: true
+                    });
+                }
+
+                if (!player.connected) player.connect();
+
+                const res = await player.search({ query, requester: member.user }, interaction.user);
+                if (!res.tracks.length) {
+                    return interaction.editReply('검색 결과가 없습니다.');
+                }
+
+                player.queue.add(res.tracks[0]);
+                if (!player.playing && !player.paused) player.play();
+
+                await interaction.editReply(`재생 대기중: **${res.tracks[0].info.title}**`);
+            }
+
+            if (commandName === 'skip') {
+                const player = client.lavalink.getPlayer(guild.id);
+                if (!player || !player.queue.current) {
+                    return interaction.reply({ content: '재생중인 노래가 없습니다.', ephemeral: true });
+                }
+
+                player.stop();
+                await interaction.reply('노래를 스킵했습니다!');
+            }
+        });
     }
 };
