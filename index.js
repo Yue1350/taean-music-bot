@@ -30,9 +30,10 @@ const client = new Client({
 client.lavalink = new LavalinkManager({
     nodes: [
         {
-            host: process.env.LAVALINK_HOST || 'localhost',
-            port: parseInt(process.env.LAVALINK_PORT) || 2333,
-            password: process.env.LAVALINK_PASSWORD || 'youshallnotpass',
+            authorization: process.env.LAVA_PASSWORD || 'youshallnotpass',
+            host: process.env.LAVA_HOST || 'localhost',
+            port: parseInt(process.env.LAVA_PORT) || 2333,
+            secure: process.env.LAVA_SECURE === 'true', // 'true' 문자열이면 true, 그 외는 false
             id: 'node-1'
         }
     ],
