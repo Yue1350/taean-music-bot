@@ -7,7 +7,7 @@ const playerIntervals = new Map();
 const isUpdatingMap = new Map();
 
 function createProgressBar(current, total) {
-    const size = 15;
+    const size = 14;
     const progress = Math.min(Math.max(current / total, 0), 1);
     const pos = Math.round(progress * size);
     return '➖'.repeat(pos) + '🔘' + '➖'.repeat(size - pos);
