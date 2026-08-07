@@ -1,3 +1,8 @@
+const keepAlive = require('./keep_alive');
+
+// 웹 서버 실행 (봇이 안 꺼지게 유지용)
+keepAlive();
+
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { DisTube } = require('distube');
 const { YtDlpPlugin } = require('@distube/yt-dlp');
