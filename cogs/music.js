@@ -21,13 +21,20 @@ function formatTime(ms) {
 }
 
 function getDisabledButtons() {
-    return new ActionRowBuilder().addComponents(
+    const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪').setDisabled(true),
         new ButtonBuilder().setCustomId('music_pause').setStyle(ButtonStyle.Secondary).setEmoji('⏸️').setDisabled(true),
         new ButtonBuilder().setCustomId('music_next').setStyle(ButtonStyle.Secondary).setEmoji('⏭️').setDisabled(true),
         new ButtonBuilder().setCustomId('music_loop').setStyle(ButtonStyle.Secondary).setEmoji('🔁').setDisabled(true),
         new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(true)
     );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('music_vol_down').setStyle(ButtonStyle.Secondary).setEmoji('➖').setLabel('볼륨 -').setDisabled(true),
+        new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setLabel('볼륨 +').setDisabled(true)
+    );
+
+    return [row1, row2];
 }
 
 async function updateIdleMessage(channel, cleanAll = false) {
@@ -35,15 +42,15 @@ async function updateIdleMessage(channel, cleanAll = false) {
         if (cleanAll) {
             let fetched;
             do {
-                fetched = await channel.messages.fetch({ limit: 100 });
-                if (fetched.size > 0) {
+                fetched = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+                if (fetched && fetched.size > 0) {
                     await channel.bulkDelete(fetched, true).catch(async () => {
                         for (const msg of fetched.values()) {
                             await msg.delete().catch(() => {});
                         }
                     });
                 }
-            } while (fetched.size >= 2);
+            } while (fetched && fetched.size >= 2);
             idleMessageMap.delete(channel.guild.id);
             queueMessageMap.delete(channel.guild.id);
         }
@@ -63,7 +70,7 @@ async function updateIdleMessage(channel, cleanAll = false) {
             .setImage('attachment://music_idle.png');
 
         const file = new AttachmentBuilder('./assets/music_idle.png');
-        const disabledRow = getDisabledButtons();
+        const disabledRows = getDisabledButtons();
 
         let msgId = idleMessageMap.get(channel.guild.id);
         let msg = null;
@@ -72,9 +79,9 @@ async function updateIdleMessage(channel, cleanAll = false) {
         }
 
         if (msg) {
-            await msg.edit({ embeds: [idleEmbed], components: [disabledRow], files: [file] }).catch(() => {});
+            await msg.edit({ embeds: [idleEmbed], components: disabledRows, files: [file] }).catch(() => {});
         } else {
-            const sentMsg = await channel.send({ embeds: [idleEmbed], components: [disabledRow], files: [file] });
+            const sentMsg = await channel.send({ embeds: [idleEmbed], components: disabledRows, files: [file] });
             idleMessageMap.set(channel.guild.id, sentMsg.id);
         }
     } catch (e) {
@@ -98,7 +105,6 @@ async function updatePlayerMessage(player, client) {
         const currentTrack = player.queue.current;
         if (!currentTrack) return;
 
-        // 1. 대기열 배열 추출 (Lavalink 버전 완벽 대응)
         const queueTracks = player.queue.tracks || Array.from(player.queue) || [];
 
         const queueEmbed = new EmbedBuilder()
@@ -106,14 +112,13 @@ async function updatePlayerMessage(player, client) {
             .setTitle('📜 대기열 목록');
 
         if (queueTracks.length > 0) {
-            const list = queueTracks.slice(0, 5).map((t, i) => `${i + 1}. **[${t.info.title}](${t.info.uri || '#'})**`).join('\n');
+            const list = queueTracks.slice(0, 5).map((t, i) => `${i + 1}. **${t.info.title}**`).join('\n');
             const remaining = queueTracks.length - 5;
             queueEmbed.setDescription(list + (remaining > 0 ? `\n\n*외 ${remaining}곡*` : ''));
         } else {
             queueEmbed.setDescription('대기열에 다음 노래가 없습니다.');
         }
 
-        // 2. 재생 메시지 Embed 생성
         const position = player.position;
         const duration = currentTrack.info.duration;
         const progressBar = createProgressBar(position, duration);
@@ -135,22 +140,27 @@ async function updatePlayerMessage(player, client) {
             .setTitle(`🎵 ${currentTrack.info.title}`)
             .setURL(trackUrl)
             .addFields(
-                { name: '\u200b', value: '\u200b', inline: true },
                 { name: '👤 신청자', value: `<@${currentTrack.requester.id}>`, inline: true },
                 { name: '🔊 볼륨', value: `${displayVolume}%`, inline: true },
                 { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false }
             )
             .setImage(artwork || null);
 
-        const row = new ActionRowBuilder().addComponents(
+        // 첫 번째 버튼 줄 (기본 재생 제어)
+        const row1 = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪').setDisabled(false),
-            new ButtonBuilder().setCustomId('music_pause').setStyle(player.paused ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('⏸️').setDisabled(false),
+            new ButtonBuilder().setCustomId('music_pause').setStyle(player.paused ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji(player.paused ? '▶️' : '⏸️').setDisabled(false),
             new ButtonBuilder().setCustomId('music_next').setStyle(ButtonStyle.Secondary).setEmoji('⏭️').setDisabled(false),
             new ButtonBuilder().setCustomId('music_loop').setStyle(player.repeatMode === 'queue' || player.repeatMode === 'track' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji(player.repeatMode === 'track' ? '🔂' : '🔁').setDisabled(false),
             new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(false)
         );
 
-        // 상단 플레이어 메시지 갱신/생성
+        // 두 번째 버튼 줄 (볼륨 -, 볼륨 +)
+        const row2 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('music_vol_down').setStyle(ButtonStyle.Secondary).setEmoji('➖').setLabel('볼륨 -').setDisabled(false),
+            new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setLabel('볼륨 +').setDisabled(false)
+        );
+
         let msgId = idleMessageMap.get(guild.id);
         let msg = null;
         if (msgId) {
@@ -158,13 +168,12 @@ async function updatePlayerMessage(player, client) {
         }
 
         if (msg) {
-            await msg.edit({ embeds: [playEmbed], components: [row], files: [] }).catch(() => {});
+            await msg.edit({ embeds: [playEmbed], components: [row1, row2], files: [] }).catch(() => {});
         } else {
-            const sent = await channel.send({ embeds: [playEmbed], components: [row] });
+            const sent = await channel.send({ embeds: [playEmbed], components: [row1, row2] });
             idleMessageMap.set(guild.id, sent.id);
         }
 
-        // 하단 대기열 메시지 갱신/생성
         let qMsgId = queueMessageMap.get(guild.id);
         let qMsg = null;
         if (qMsgId) {
@@ -381,7 +390,11 @@ module.exports = {
 
         client.on('interactionCreate', async interaction => {
             if (!interaction.isButton()) return;
-            if (!['music_prev', 'music_pause', 'music_next', 'music_loop', 'music_stop'].includes(interaction.customId)) return;
+            const validButtons = [
+                'music_prev', 'music_pause', 'music_next', 'music_loop', 'music_stop',
+                'music_vol_down', 'music_vol_up'
+            ];
+            if (!validButtons.includes(interaction.customId)) return;
 
             const player = client.lavalink.getPlayer(interaction.guild.id);
             if (!player) return interaction.reply({ content: '재생 중인 플레이어가 없습니다.', flags: [MessageFlags.Ephemeral] });
@@ -389,7 +402,7 @@ module.exports = {
             await interaction.deferUpdate();
 
             if (interaction.customId === 'music_prev') {
-                if (player.position <= 10000 && player.queue.previous.length > 0) {
+                if (player.position <= 10000 && player.queue.previous && player.queue.previous.length > 0) {
                     player.play(player.queue.previous[0]);
                 } else {
                     player.seek(0);
@@ -419,6 +432,14 @@ module.exports = {
                 const channel = interaction.channel;
                 await updateIdleMessage(channel);
                 return;
+            } else if (interaction.customId === 'music_vol_down') {
+                const currentDisplayVol = Math.round(player.volume * 2);
+                const newDisplayVol = Math.max(0, currentDisplayVol - 5);
+                player.setVolume(Math.round(newDisplayVol / 2));
+            } else if (interaction.customId === 'music_vol_up') {
+                const currentDisplayVol = Math.round(player.volume * 2);
+                const newDisplayVol = Math.min(100, currentDisplayVol + 5);
+                player.setVolume(Math.round(newDisplayVol / 2));
             }
 
             await updatePlayerMessage(player, client);
@@ -433,12 +454,16 @@ module.exports = {
         });
 
         client.lavalink.on('trackEnd', async (player) => {
-            if (!player.queue.current) {
+            const queueTracks = player.queue.tracks || Array.from(player.queue) || [];
+            
+            if (queueTracks.length === 0) {
                 if (playerIntervals.has(player.guildId)) {
                     clearInterval(playerIntervals.get(player.guildId));
                     playerIntervals.delete(player.guildId);
                 }
+                
                 player.destroy();
+                
                 const guild = client.guilds.cache.get(player.guildId);
                 if (guild) {
                     const channelId = musicChannels.get(guild.id);
