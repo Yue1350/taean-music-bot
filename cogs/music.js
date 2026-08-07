@@ -1,19 +1,16 @@
-const { SlashCommandBuilder, REST, Routes, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, REST, Routes, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, AttachmentBuilder } = require('discord.js');
 
 const musicChannels = new Map();
-const idleMessageMap = new Map(); // 채널별 대기 메시지 ID 저장
-const playerIntervals = new Map(); // 5초마다 실시간 재생바 업데이트용 인터벌 저장
+const idleMessageMap = new Map();
+const playerIntervals = new Map();
 
-// 15칸짜리 프로그레스바 생성 함수
 function createProgressBar(current, total) {
     const size = 15;
     const progress = Math.min(Math.max(current / total, 0), 1);
     const pos = Math.round(progress * size);
-    const bar = '▬'.repeat(pos) + '🔘' + '▬'.repeat(size - pos);
-    return bar;
+    return '▬'.repeat(pos) + '🔘' + '▬'.repeat(size - pos);
 }
 
-// 시간 포맷 함수 (밀리초 -> mm:ss)
 function formatTime(ms) {
     const totalSeconds = Math.floor(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -21,10 +18,8 @@ function formatTime(ms) {
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 }
 
-// 대기 상태(Idle) 임베드 전송 함수
 async function updateIdleMessage(channel) {
     try {
-        // 이전 메시지 전부 삭제
         const fetchedMessages = await channel.messages.fetch({ limit: 100 });
         if (fetchedMessages.size > 0) {
             await channel.bulkDelete(fetchedMessages, true).catch(() => {});
@@ -36,7 +31,6 @@ async function updateIdleMessage(channel) {
             .setDescription('노래의 제목이나 링크를 채팅에 보내주세요!')
             .setImage('attachment://music_idle.png');
 
-        const { AttachmentBuilder } = require('discord.js');
         const file = new AttachmentBuilder('./assets/music_idle.png');
 
         const sentMsg = await channel.send({ embeds: [idleEmbed], files: [file] });
@@ -46,7 +40,6 @@ async function updateIdleMessage(channel) {
     }
 }
 
-// 플레이어 패널 업데이트 및 실시간 재생바 함수
 async function updatePlayerMessage(player, client) {
     const guild = client.guilds.cache.get(player.guildId);
     if (!guild) return;
@@ -58,7 +51,6 @@ async function updatePlayerMessage(player, client) {
     const currentTrack = player.queue.current;
     if (!currentTrack) return;
 
-    // 대기열 목록 정리 (최대 5개, 이후 외 몇 곡)
     const queueTracks = player.queue;
     let queueText = '대기열에 노래가 없습니다.';
     if (queueTracks.length > 0) {
@@ -70,16 +62,21 @@ async function updatePlayerMessage(player, client) {
     const position = player.position;
     const duration = currentTrack.info.duration;
     const progressBar = createProgressBar(position, duration);
-    const timeText = `${formatTime(position)} / ${formatTime(duration)}`;
+    const timeText = `[${formatTime(position)} / ${formatTime(duration)}]`;
 
+    // 스크린샷 레이아웃 맞춤 디자인
     const playEmbed = new EmbedBuilder()
         .setColor('#5865F2')
-        .setTitle(currentTrack.info.title)
-        .setDescription(`요청자: <@${currentTrack.requester.id}> | 볼륨: ${player.volume}%\n\n${progressBar} \n\`${timeText}\``)
-        .addFields({ name: '📜 대기열 목록', value: queueText })
-        .setThumbnail(currentTrack.info.artworkUrl || currentTrack.info.uri);
+        .setTitle(`🎵 ${currentTrack.info.title}`)
+        .addFields(
+            { name: '👤 신청자', value: `<@${currentTrack.requester.id}>`, inline: true },
+            { name: '🎤 아티스트', value: `${currentTrack.info.author || '알 수 없음'}`, inline: true },
+            { name: '🔊 볼륨', value: `${player.volume}%`, inline: true },
+            { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false },
+            { name: '📜 대기열 목록', value: queueText, inline: false }
+        )
+        .setImage(currentTrack.info.artworkUrl || currentTrack.info.uri);
 
-    // 버튼 생성 (5개, 텍스트 없음)
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪'),
         new ButtonBuilder().setCustomId('music_pause').setStyle(player.paused ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('⏸️'),
@@ -112,9 +109,15 @@ module.exports = {
                 .setName('음악채널')
                 .setDescription('음악 봇 전용 채널을 관리합니다.')
                 .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
-                .addSubcommand(sub => sub.setName('생성').setDescription('새로운 음악 전용 채널을 자동으로 생성합니다.'))
-                .addSubcommand(sub => sub.setName('지정').setDescription('현재 채널을 음악 전용 채널로 지정합니다.').addChannelOption(o => o.setName('채널').setDescription('지정할 텍스트 채널').setRequired(false)))
-                .addSubcommand(sub => sub.setName('해제').setDescription('설정된 음악 전용 채널을 해제합니다.'))
+                .addStringOption(option =>
+                    option.setName('작업')
+                        .setDescription('생성, 지정, 해제 중 선택하세요.')
+                        .setRequired(true)
+                        .addChoices(
+                            { name: '생성', value: '생성' },
+                            { name: '지정', value: '지정' },
+                            { name: '해제', value: '해제' }
+                        ))
         ];
 
         const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
@@ -125,15 +128,14 @@ module.exports = {
             console.error(error);
         }
 
-        // 명령어 처리
         client.on('interactionCreate', async interaction => {
             if (!interaction.isChatInputCommand()) return;
             if (interaction.commandName !== '음악채널') return;
 
             const { options, guild } = interaction;
-            const subCommand = options.getSubcommand();
+            const action = options.getString('작업');
 
-            if (subCommand === '생성') {
+            if (action === '생성') {
                 await interaction.deferReply({ ephemeral: true });
                 try {
                     const newChannel = await guild.channels.create({
@@ -143,32 +145,31 @@ module.exports = {
                     });
                     musicChannels.set(guild.id, newChannel.id);
                     await updateIdleMessage(newChannel);
-                    return interaction.editReply(`성공적으로 음악 채널을 생성하고 지정했어! 👉 <#${newChannel.id}>`);
+                    return interaction.editReply(`음악 채널을 새로 만들고 지정했어! 👉 <#${newChannel.id}>`);
                 } catch (error) {
-                    return interaction.editReply('채널 생성 중 오류가 발생했어.');
+                    return interaction.editReply('채널 생성 중에 오류가 발생했어.');
                 }
             }
 
-            if (subCommand === '지정') {
-                const targetChannel = options.getChannel('채널') || interaction.channel;
+            if (action === '지정') {
+                const targetChannel = interaction.channel;
                 if (targetChannel.type !== ChannelType.GuildText) {
-                    return interaction.reply({ content: '텍스트 채널만 지정할 수 있어!', ephemeral: true });
+                    return interaction.reply({ content: '텍스트 채널에서만 지정할 수 있어!', ephemeral: true });
                 }
                 musicChannels.set(guild.id, targetChannel.id);
                 await updateIdleMessage(targetChannel);
-                return interaction.reply({ content: `음악 채널이 지정되었어! 👉 <#${targetChannel.id}>`, ephemeral: true });
+                return interaction.reply({ content: `현재 채널을 음악 채널로 지정했어! 👉 <#${targetChannel.id}>`, ephemeral: true });
             }
 
-            if (subCommand === '해제') {
+            if (action === '해제') {
                 if (!musicChannels.has(guild.id)) {
-                    return interaction.reply({ content: '지정된 음악 채널이 없어.', ephemeral: true });
+                    return interaction.reply({ content: '현재 지정된 음악 채널이 없어.', ephemeral: true });
                 }
                 musicChannels.delete(guild.id);
                 return interaction.reply({ content: '음악 채널 지정을 해제했어!', ephemeral: true });
             }
         });
 
-        // 텍스트로 링크나 제목 입력 시 처리
         client.on('messageCreate', async message => {
             if (message.author.bot || !message.guild) return;
             const registeredChannelId = musicChannels.get(message.guild.id);
@@ -179,7 +180,7 @@ module.exports = {
 
             const voiceChannel = message.member.voice.channel;
             if (!voiceChannel) {
-                const temp = await message.channel.send('먼저 음성 채널에 들어가주세요!');
+                const temp = await message.channel.send('먼저 음성 채널에 들어가줘!');
                 setTimeout(() => temp.delete().catch(() => {}), 3000);
                 return;
             }
@@ -204,7 +205,6 @@ module.exports = {
 
             await updatePlayerMessage(player, client);
 
-            // 5초마다 재생바 최신화 인터벌 설정
             if (!playerIntervals.has(message.guild.id)) {
                 const interval = setInterval(async () => {
                     if (!player.playing) return;
@@ -214,13 +214,12 @@ module.exports = {
             }
         });
 
-        // 버튼 상호작용 처리
         client.on('interactionCreate', async interaction => {
             if (!interaction.isButton()) return;
             if (!['music_prev', 'music_pause', 'music_next', 'music_loop', 'music_stop'].includes(interaction.customId)) return;
 
             const player = client.lavalink.getPlayer(interaction.guild.id);
-            if (!player) return interaction.reply({ content: '재생 중인 플레이어가 없습니다.', ephemeral: true });
+            if (!player) return interaction.reply({ content: '재생 중인 플레이어가 없어.', ephemeral: true });
 
             await interaction.deferUpdate();
 
@@ -256,7 +255,6 @@ module.exports = {
             await updatePlayerMessage(player, client);
         });
 
-        // 음악 종료/넘어갈 때 처리
         client.lavalink.on('trackEnd', async (player) => {
             if (!player.queue.current) {
                 if (playerIntervals.has(player.guildId)) {
