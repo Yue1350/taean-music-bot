@@ -117,9 +117,9 @@ async function updateIdleMessage(channel, cleanAll = false) {
             queueMessageMap.delete(channel.guild.id);
         }
 
+        // 제목 제거 후 이미지만 깔끔하게 박히도록 설정
         const idleEmbed = new EmbedBuilder()
             .setColor('#2b2d31')
-            .setTitle('🎵 현재 노래가 재생 중이지 않습니다')
             .setImage('attachment://music_idle.png');
 
         const file = new AttachmentBuilder('./assets/music_idle.png');
