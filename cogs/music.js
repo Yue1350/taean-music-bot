@@ -415,28 +415,24 @@ async function handleInteraction(client, interaction) {
                 currentFilterMap.set(interaction.guild.id, '일반 (OFF)');
             } else if (selectedFilter === 'bassboost') {
                 await player.filterManager.resetFilters();
-                player.filterManager.setEQ([
+                await player.filterManager.filters.setEQ([
                     { band: 0, gain: 0.25 },
                     { band: 1, gain: 0.20 },
                     { band: 2, gain: 0.15 },
                     { band: 3, gain: 0.10 }
                 ]);
-                await player.filterManager.commit();
                 currentFilterMap.set(interaction.guild.id, '🔊 베이스 보스트');
             } else if (selectedFilter === 'nightcore') {
                 await player.filterManager.resetFilters();
-                player.filterManager.setTimeScale({ speed: 1.25, pitch: 1.25, rate: 1.0 });
-                await player.filterManager.commit();
+                await player.filterManager.filters.setTimescale({ speed: 1.25, pitch: 1.25, rate: 1.0 });
                 currentFilterMap.set(interaction.guild.id, '⚡ 나이트코어');
             } else if (selectedFilter === 'vaporwave') {
                 await player.filterManager.resetFilters();
-                player.filterManager.setTimeScale({ speed: 0.85, pitch: 0.8, rate: 1.0 });
-                await player.filterManager.commit();
+                await player.filterManager.filters.setTimescale({ speed: 0.85, pitch: 0.8, rate: 1.0 });
                 currentFilterMap.set(interaction.guild.id, '🌊 바포웨이브');
             } else if (selectedFilter === 'rotation') {
                 await player.filterManager.resetFilters();
-                player.filterManager.setRotation({ rotationHz: 0.2 });
-                await player.filterManager.commit();
+                await player.filterManager.filters.setRotation({ rotationHz: 0.2 });
                 currentFilterMap.set(interaction.guild.id, '🎧 3D 회전 오디오');
             }
         } catch (err) {
