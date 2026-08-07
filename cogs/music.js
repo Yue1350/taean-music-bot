@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, REST, Routes, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, AttachmentBuilder, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, REST, Routes, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, AttachmentBuilder, MessageFlags, escapeMarkdown } = require('discord.js');
 
 const musicChannels = new Map();
 const idleMessageMap = new Map();
@@ -122,11 +122,13 @@ async function updatePlayerMessage(player, client) {
             .setTitle('📜 대기열 목록');
 
         if (queueTracks.length > 0) {
+            // escapeMarkdown 적용으로 특수문자 마크다운 오작동 방지 및 \n\n으로 각 번호 항목 간격 생성
             const list = queueTracks.slice(0, 5).map((t, i) => {
                 const reqId = t.requester?.id || t.requester;
                 const requesterText = reqId ? ` (신청자: <@${reqId}>)` : '';
-                return `**${i + 1}.** ${t.info.title}${requesterText}`;
-            }).join('\n');
+                const cleanTitle = escapeMarkdown(t.info.title);
+                return `**${i + 1}.** ${cleanTitle}${requesterText}`;
+            }).join('\n\n');
 
             const remaining = queueTracks.length - 5;
             
