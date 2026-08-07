@@ -141,7 +141,6 @@ async function updatePlayerMessage(player, client) {
             new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(false)
         );
 
-        // 요청한 순서: 음량 줄이기(➖), 음량 키우기(➕), 필터(🎛️)
         const row2 = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('music_vol_down').setStyle(ButtonStyle.Secondary).setEmoji('➖').setDisabled(false),
             new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setDisabled(false),
@@ -254,34 +253,6 @@ function setupMusicEvents(client) {
                     }
                 }
             }
-        }
-    });
-
-    const commands = [
-        new SlashCommandBuilder()
-            .setName('음악채널')
-            .setDescription('음악 봇 전용 채널을 관리합니다.')
-            .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
-            .addStringOption(option =>
-                option.setName('작업')
-                    .setDescription('생성, 지정, 해제 중 선택하세요.')
-                    .setRequired(true)
-                    .addChoices(
-                        { name: '생성', value: '생성' },
-                        { name: '지정', value: '지정' },
-                        { name: '해제', value: '해제' }
-                    ))
-    ];
-
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    client.once('ready', async () => {
-        try {
-            if (client.user?.id) {
-                await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-                console.log('슬러시 명령어(음악채널) 등록 완료!');
-            }
-        } catch (error) {
-            console.error('슬래시 명령어 등록 실패:', error);
         }
     });
 }
