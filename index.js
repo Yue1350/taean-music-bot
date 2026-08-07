@@ -1,22 +1,22 @@
 require('dotenv').config();
+const express = require('express');
 const { Client, GatewayIntentBits } = require('discord.js');
 const { LavalinkManager } = require('lavalink-client');
-const express = require('express');
-// cogs 폴더 안의 music.js를 가져오도록 경로 수정!
-const { setupMusicEvents, handleMessage, handleInteraction } = require('./cogs/music.js');
+const { setupMusicEvents, handleMessage, handleInteraction } = require('./cogs/music');
 
-// --- 1. Render 배포 유지용 웹 서버 ---
+// --- 1. Web Server (Render 포트 바인딩용) ---
 const app = express();
-app.get('/', (req, res) => res.send('Music Bot is Online!'));
-app.listen(process.env.PORT || 3000, () => {
-    console.log('[Web] 웹 서버가 실행 중입니다.');
+const PORT = process.env.PORT || 10000;
+
+app.get('/', (req, res) => {
+    res.send('태안 노래봇이 정상 작동 중입니다!');
 });
 
-// --- 2. 프로세스 예외 처리 (봇 강제 종료 방지) ---
-process.on('unhandledRejection', (reason) => console.error('[Error] Unhandled Rejection:', reason));
-process.on('uncaughtException', (err) => console.error('[Error] Uncaught Exception:', err));
+app.listen(PORT, () => {
+    console.log(`[Web] 웹 서버가 실행 중입니다. (Port: ${PORT})`);
+});
 
-// --- 3. 디스코드 클라이언트 생성 ---
+// --- 2. Discord Client 설정 ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -26,14 +26,14 @@ const client = new Client({
     ]
 });
 
-// --- 4. Lavalink 매니저 설정 ---
+// --- 3. Lavalink 매니저 설정 ---
 client.lavalink = new LavalinkManager({
     nodes: [
         {
             authorization: process.env.LAVA_PASSWORD || 'youshallnotpass',
             host: process.env.LAVA_HOST || 'localhost',
             port: parseInt(process.env.LAVA_PORT) || 2333,
-            secure: process.env.LAVA_SECURE === 'true', // 'true' 문자열이면 true, 그 외는 false
+            secure: process.env.LAVA_SECURE === 'true',
             id: 'node-1'
         }
     ],
@@ -41,17 +41,26 @@ client.lavalink = new LavalinkManager({
     autoPlay: true
 });
 
-// --- 5. 이벤트 등록 ---
-client.on('ready', async () => {
-    console.log(`[Bot] ${client.user.tag} 로 로그인 완료!`);
-    await client.lavalink.init(client.user.id);
-});
-
-// 음악 관련 이벤트 세팅
+// --- 4. 이벤트 및 모듈 등록 ---
 setupMusicEvents(client);
 
-// 메시지 입력 및 인터랙션(버튼/메뉴) 핸들러 연결
-client.on('messageCreate', (message) => handleMessage(client, message));
-client.on('interactionCreate', (interaction) => handleInteraction(client, interaction));
+client.once('ready', async () => {
+    console.log(`[Bot] ${client.user.tag} 로 로그인 완료!`);
 
+    // Lavalink 매니저 초기화시 유저 정보 전달
+    await client.lavalink.init({
+        id: client.user.id,
+        username: client.user.username
+    });
+});
+
+client.on('messageCreate', async (message) => {
+    await handleMessage(client, message);
+});
+
+client.on('interactionCreate', async (interaction) => {
+    await handleInteraction(client, interaction);
+});
+
+// --- 5. Bot 로그인 ---
 client.login(process.env.DISCORD_TOKEN);
