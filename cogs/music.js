@@ -4,8 +4,8 @@ const musicChannels = new Map();
 const idleMessageMap = new Map();
 const queueMessageMap = new Map();
 const playerIntervals = new Map();
-const isUpdatingMap = new Map(); // 중복 메시지 처리 방지 Lock
-const currentFilterMap = new Map(); // 길드별 현재 적용된 필터 이름 저장
+const isUpdatingMap = new Map();
+const currentFilterMap = new Map();
 
 function createProgressBar(current, total) {
     const size = 15;
@@ -198,7 +198,6 @@ async function updatePlayerMessage(player, client) {
     }
 }
 
-// 라바링크 이벤트 설정
 function setupMusicEvents(client) {
     client.lavalink.on('trackStart', async (player) => {
         await updatePlayerMessage(player, client);
@@ -233,7 +232,6 @@ function setupMusicEvents(client) {
         }
     });
 
-    // 음성 채널 상태 변경 이벤트 처리
     client.on('voiceStateUpdate', async (oldState, newState) => {
         if (oldState.member.id === client.user.id && !newState.channelId) {
             const player = client.lavalink.getPlayer(oldState.guild.id);
@@ -279,7 +277,6 @@ function setupMusicEvents(client) {
         }
     });
 
-    // 슬래시 명령어 등록
     const commands = [
         new SlashCommandBuilder()
             .setName('음악채널')
@@ -297,17 +294,18 @@ function setupMusicEvents(client) {
     ];
 
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    (async () => {
+    client.once('ready', async () => {
         try {
-            await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-            console.log('슬러시 명령어(음악채널) 등록 완료!');
+            if (client.user?.id) {
+                await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+                console.log('슬러시 명령어(음악채널) 등록 완료!');
+            }
         } catch (error) {
-            console.error(error);
+            console.error('슬래시 명령어 등록 실패:', error);
         }
-    })();
+    });
 }
 
-// 메시지 입력 처리 핸들러
 async function handleMessage(client, message) {
     if (message.author.bot || !message.guild) return;
     const registeredChannelId = musicChannels.get(message.guild.id);
@@ -364,9 +362,7 @@ async function handleMessage(client, message) {
     }
 }
 
-// 버튼 및 인터랙션 처리 핸들러
 async function handleInteraction(client, interaction) {
-    // 1. 슬래시 명령어 처리
     if (interaction.isChatInputCommand() && interaction.commandName === '음악채널') {
         const { options, guild } = interaction;
         const action = options.getString('작업');
@@ -406,7 +402,6 @@ async function handleInteraction(client, interaction) {
         }
     }
 
-    // 2. 드롭다운(필터 선택) 처리
     if (interaction.isStringSelectMenu() && interaction.customId === 'filter_select_menu') {
         const player = client.lavalink.getPlayer(interaction.guild.id);
         if (!player) return interaction.reply({ content: '재생 중인 플레이어가 없습니다.', flags: [MessageFlags.Ephemeral] });
@@ -452,7 +447,6 @@ async function handleInteraction(client, interaction) {
         return;
     }
 
-    // 3. 버튼 버튼 클릭 처리
     if (!interaction.isButton()) return;
     const validButtons = [
         'music_prev', 'music_pause', 'music_next', 'music_stop',
