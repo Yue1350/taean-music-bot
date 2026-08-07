@@ -237,21 +237,17 @@ async function handleMessage(client, message) {
 
 async function handleInteraction(client, interaction) {
     try {
-        // 1. 셀렉트 메뉴 처리 (필터 선택)
+        // 무조건 가장 먼저 응답 지연(ack)을 때려박아서 '응답 없음' 에러를 원천 차단합니다.
         if (interaction.isStringSelectMenu() && interaction.customId === 'filter_select_menu') {
+            await interaction.deferUpdate().catch(() => {});
+            
             const player = client.lavalink.getPlayer(interaction.guild.id);
-            if (!player) {
-                return interaction.reply({ content: '❌ 재생 중인 플레이어가 없습니다.', flags: [MessageFlags.Ephemeral] });
-            }
-
-            await interaction.deferUpdate();
+            if (!player) return;
 
             const selectedFilter = interaction.values[0];
             await player.filterManager.resetFilters();
             
-            if (selectedFilter === 'clear') {
-                currentFilterMap.set(interaction.guild.id, '일반 (OFF)');
-            } else if (selectedFilter === 'echo') {
+            if (selectedFilter === 'echo') {
                 await player.filterManager.setPluginFilters({ echo: { echoLength: 0.3, decay: 0.5 } });
                 currentFilterMap.set(interaction.guild.id, '📻 에코 효과');
             } else if (selectedFilter === 'lowpass') {
@@ -263,13 +259,14 @@ async function handleInteraction(client, interaction) {
             } else if (selectedFilter === 'normalization') {
                 await player.filterManager.setPluginFilters({ normalization: { maxAmplitude: 0.5, adaptive: true } });
                 currentFilterMap.set(interaction.guild.id, '🎚️ 볼륨 노말라이제이션');
+            } else {
+                currentFilterMap.set(interaction.guild.id, '일반 (OFF)');
             }
 
             await updatePlayerMessage(player, client);
             return;
         }
 
-        // 2. 버튼 처리
         if (interaction.isButton()) {
             if (interaction.customId === 'music_filter_menu') {
                 const filterSelect = new StringSelectMenuBuilder()
@@ -284,42 +281,38 @@ async function handleInteraction(client, interaction) {
                     ]);
 
                 const selectRow = new ActionRowBuilder().addComponents(filterSelect);
-                return interaction.reply({
+                return await interaction.reply({
                     content: '🎛️ **음향 효과(LavaDSPX) 선택**',
                     components: [selectRow],
                     flags: [MessageFlags.Ephemeral]
-                });
+                }).catch(() => {});
             }
+
+            // 나머지 버튼들도 전부 deferUpdate를 먼저 먹이고 시작
+            await interaction.deferUpdate().catch(() => {});
 
             const player = client.lavalink.getPlayer(interaction.guild.id);
 
             if (interaction.customId === 'music_stop') {
-                if (!player) {
-                    return interaction.reply({ content: '❌ 재생 중인 플레이어가 없습니다.', flags: [MessageFlags.Ephemeral] });
-                }
+                if (!player) return;
                 if (playerIntervals.has(player.guildId)) {
                     clearInterval(playerIntervals.get(player.guildId));
                     playerIntervals.delete(player.guildId);
                 }
                 currentFilterMap.delete(interaction.guild.id);
                 await player.destroy();
-                await interaction.update({ content: '⏹️ 음악 재생을 중지했습니다.', embeds: [], components: getDisabledButtons() }).catch(() => {});
                 const channel = interaction.guild.channels.cache.get(musicChannels.get(interaction.guild.id));
                 if (channel) await updateIdleMessage(channel);
                 return;
             }
 
-            if (!player) {
-                return interaction.reply({ content: '❌ 재생 중인 플레이어가 없습니다.', flags: [MessageFlags.Ephemeral] });
-            }
+            if (!player) return;
 
             if (interaction.customId === 'music_pause') {
                 await player.pause(!player.paused);
-                await interaction.deferUpdate();
                 await updatePlayerMessage(player, client);
             } else if (interaction.customId === 'music_next') {
                 await player.skip();
-                await interaction.deferUpdate();
             } else if (interaction.customId === 'music_prev') {
                 const history = player.queue.previous;
                 if (history && history.length > 0) {
@@ -327,22 +320,16 @@ async function handleInteraction(client, interaction) {
                     await player.queue.unshift(lastTrack);
                     await player.skip();
                 }
-                await interaction.deferUpdate();
             } else if (interaction.customId === 'music_vol_up') {
                 const newVol = Math.min(player.volume + 10, 150);
                 await player.setVolume(newVol);
-                return interaction.reply({ content: `🔊 볼륨을 **${newVol}%**로 설정했어요.`, flags: [MessageFlags.Ephemeral] });
             } else if (interaction.customId === 'music_vol_down') {
                 const newVol = Math.max(player.volume - 10, 0);
                 await player.setVolume(newVol);
-                return interaction.reply({ content: `🔉 볼륨을 **${newVol}%**로 설정했어요.`, flags: [MessageFlags.Ephemeral] });
             }
         }
     } catch (err) {
         console.error('인터랙션 처리 중 오류 발생:', err);
-        if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: '❌ 처리 중 오류가 발생했습니다.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
-        }
     }
 }
 
