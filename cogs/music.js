@@ -1,4 +1,6 @@
 const { SlashCommandBuilder, REST, Routes, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, AttachmentBuilder, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
+const path = require('path');
+const fs = require('fs');
 
 const musicChannels = new Map();
 const idleMessageMap = new Map();
@@ -55,6 +57,14 @@ async function updateIdleMessage(channel, cleanAll = false) {
         .setTitle('🎵 현재 노래가 재생 중이지 않습니다')
         .setDescription('채팅창에 노래 제목이나 유튜브 링크를 입력하면 음악을 재생할 수 있어요!');
 
+    const imagePath = path.join(__dirname, '../assets/music_idle.png');
+    let files = [];
+    if (fs.existsSync(imagePath)) {
+        const attachment = new AttachmentBuilder(imagePath, { name: 'music_idle.png' });
+        idleEmbed.setImage('attachment://music_idle.png');
+        files.push(attachment);
+    }
+
     const disabledRows = getDisabledButtons();
     let msgId = idleMessageMap.get(channel.guild.id);
     let msg = null;
@@ -66,9 +76,9 @@ async function updateIdleMessage(channel, cleanAll = false) {
     }
 
     if (msg) {
-        await msg.edit({ embeds: [idleEmbed], components: disabledRows }).catch(() => {});
+        await msg.edit({ embeds: [idleEmbed], components: disabledRows, files: files }).catch(() => {});
     } else {
-        const sentMsg = await channel.send({ embeds: [idleEmbed], components: disabledRows });
+        const sentMsg = await channel.send({ embeds: [idleEmbed], components: disabledRows, files: files });
         idleMessageMap.set(channel.guild.id, sentMsg.id);
     }
 }
@@ -106,6 +116,14 @@ async function updatePlayerMessage(player, client) {
                 { name: '\u200b', value: `${progressBar}`, inline: false }
             );
 
+        const imagePath = path.join(__dirname, '../assets/music_idle.png');
+        let files = [];
+        if (fs.existsSync(imagePath)) {
+            const attachment = new AttachmentBuilder(imagePath, { name: 'music_idle.png' });
+            playEmbed.setImage('attachment://music_idle.png');
+            files.push(attachment);
+        }
+
         const row1 = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪'),
             new ButtonBuilder().setCustomId('music_pause').setStyle(ButtonStyle.Secondary).setEmoji(player.paused ? '▶️' : '⏸️'),
@@ -129,9 +147,9 @@ async function updatePlayerMessage(player, client) {
         }
 
         if (msg) {
-            await msg.edit({ embeds: [playEmbed], components: [row1, row2] }).catch(() => {});
+            await msg.edit({ embeds: [playEmbed], components: [row1, row2], files: files }).catch(() => {});
         } else {
-            const sent = await channel.send({ embeds: [playEmbed], components: [row1, row2] });
+            const sent = await channel.send({ embeds: [playEmbed], components: [row1, row2], files: files });
             idleMessageMap.set(guild.id, sent.id);
         }
     } finally {
