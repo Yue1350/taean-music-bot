@@ -4,6 +4,7 @@ const musicChannels = new Map();
 const idleMessageMap = new Map();
 const queueMessageMap = new Map();
 const playerIntervals = new Map();
+const isUpdatingMap = new Map(); // 중복 메시지 생성 방지용 Lock
 
 function createProgressBar(current, total) {
     const size = 15;
@@ -29,8 +30,25 @@ function getDisabledButtons() {
     );
 }
 
-async function updateIdleMessage(channel) {
+async function updateIdleMessage(channel, cleanAll = false) {
     try {
+        queueMessageMap.delete(channel.guild.id);
+
+        if (cleanAll) {
+            let fetched;
+            do {
+                fetched = await channel.messages.fetch({ limit: 100 });
+                if (fetched.size > 0) {
+                    await channel.bulkDelete(fetched, true).catch(async () => {
+                        for (const msg of fetched.values()) {
+                            await msg.delete().catch(() => {});
+                        }
+                    });
+                }
+            } while (fetched.size >= 2);
+            idleMessageMap.delete(channel.guild.id);
+        }
+
         const idleEmbed = new EmbedBuilder()
             .setColor('#2b2d31')
             .setTitle('🎵 현재 노래가 재생 중이지 않습니다')
@@ -39,7 +57,6 @@ async function updateIdleMessage(channel) {
         const file = new AttachmentBuilder('./assets/music_idle.png');
         const disabledRow = getDisabledButtons();
 
-        // 대기열 메시지가 있다면 삭제
         let qMsgId = queueMessageMap.get(channel.guild.id);
         if (qMsgId) {
             try {
@@ -69,87 +86,95 @@ async function updateIdleMessage(channel) {
 async function updatePlayerMessage(player, client) {
     const guild = client.guilds.cache.get(player.guildId);
     if (!guild) return;
-    const channelId = musicChannels.get(guild.id);
-    if (!channelId) return;
-    const channel = guild.channels.cache.get(channelId);
-    if (!channel) return;
 
-    const currentTrack = player.queue.current;
-    if (!currentTrack) return;
+    if (isUpdatingMap.get(guild.id)) return; // 동시 업데이트 중복 방지
+    isUpdatingMap.set(guild.id, true);
 
-    const queueTracks = player.queue;
-    const queueEmbed = new EmbedBuilder()
-        .setColor('#2b2d31')
-        .setTitle('📜 대기열 목록');
+    try {
+        const channelId = musicChannels.get(guild.id);
+        if (!channelId) return;
+        const channel = guild.channels.cache.get(channelId);
+        if (!channel) return;
 
-    if (queueTracks.length > 0) {
-        const list = queueTracks.slice(0, 5).map((t, i) => `${i + 1}. **[${t.info.title}](${t.info.uri || '#'})**`).join('\n');
-        const remaining = queueTracks.length - 5;
-        queueEmbed.setDescription(list + (remaining > 0 ? `\n\n*외 ${remaining}곡*` : ''));
-    } else {
-        queueEmbed.setDescription('대기열에 다음 노래가 없어!');
-    }
+        const currentTrack = player.queue.current;
+        if (!currentTrack) return;
 
-    const position = player.position;
-    const duration = currentTrack.info.duration;
-    const progressBar = createProgressBar(position, duration);
-    const timeText = `[${formatTime(position)} / ${formatTime(duration)}]`;
+        const queueTracks = player.queue;
+        const queueEmbed = new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setTitle('📜 대기열 목록');
 
-    let artwork = currentTrack.info.artworkUrl;
-    if (currentTrack.info.uri) {
-        const urlMatch = currentTrack.info.uri.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
-        if (urlMatch && urlMatch[1]) {
-            artwork = `https://img.youtube.com/vi/${urlMatch[1]}/maxresdefault.jpg`;
+        if (queueTracks.length > 0) {
+            const list = queueTracks.slice(0, 5).map((t, i) => `${i + 1}. **[${t.info.title}](${t.info.uri || '#'})**`).join('\n');
+            const remaining = queueTracks.length - 5;
+            queueEmbed.setDescription(list + (remaining > 0 ? `\n\n*외 ${remaining}곡*` : ''));
+        } else {
+            queueEmbed.setDescription('대기열에 다음 노래가 없어!');
         }
-    }
 
-    const displayVolume = Math.round(player.volume * 2);
-    const trackUrl = currentTrack.info.uri || 'https://discord.com';
+        const position = player.position;
+        const duration = currentTrack.info.duration;
+        const progressBar = createProgressBar(position, duration);
+        const timeText = `[${formatTime(position)} / ${formatTime(duration)}]`;
 
-    const playEmbed = new EmbedBuilder()
-        .setColor('#5865F2')
-        .setTitle(`🎵 ${currentTrack.info.title}`)
-        .setURL(trackUrl)
-        .addFields(
-            { name: '👤 신청자', value: `<@${currentTrack.requester.id}>`, inline: true },
-            { name: '🔊 볼륨', value: `${displayVolume}%`, inline: true },
-            { name: '\u200b', value: '\u200b', inline: false },
-            { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false }
-        )
-        .setImage(artwork || null);
+        let artwork = currentTrack.info.artworkUrl;
+        if (currentTrack.info.uri) {
+            const urlMatch = currentTrack.info.uri.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+            if (urlMatch && urlMatch[1]) {
+                artwork = `https://img.youtube.com/vi/${urlMatch[1]}/maxresdefault.jpg`;
+            }
+        }
 
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪').setDisabled(false),
-        new ButtonBuilder().setCustomId('music_pause').setStyle(player.paused ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('⏸️').setDisabled(false),
-        new ButtonBuilder().setCustomId('music_next').setStyle(ButtonStyle.Secondary).setEmoji('⏭️').setDisabled(false),
-        new ButtonBuilder().setCustomId('music_loop').setStyle(player.repeatMode === 'queue' || player.repeatMode === 'track' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji(player.repeatMode === 'track' ? '🔂' : '🔁').setDisabled(false),
-        new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(false)
-    );
+        const displayVolume = Math.round(player.volume * 2);
+        const trackUrl = currentTrack.info.uri || 'https://discord.com';
 
-    let msgId = idleMessageMap.get(guild.id);
-    let msg = null;
-    if (msgId) {
-        try { msg = await channel.messages.fetch(msgId); } catch (e) {}
-    }
+        const playEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle(`🎵 ${currentTrack.info.title}`)
+            .setURL(trackUrl)
+            .addFields(
+                { name: '👤 신청자', value: `<@${currentTrack.requester.id}>`, inline: true },
+                { name: '🔊 볼륨', value: `${displayVolume}%`, inline: true },
+                { name: '\u200b', value: '\u200b', inline: false },
+                { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false }
+            )
+            .setImage(artwork || null);
 
-    if (msg) {
-        await msg.edit({ embeds: [playEmbed], components: [row], files: [] }).catch(() => {});
-    } else {
-        const sent = await channel.send({ embeds: [playEmbed], components: [row] });
-        idleMessageMap.set(guild.id, sent.id);
-    }
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪').setDisabled(false),
+            new ButtonBuilder().setCustomId('music_pause').setStyle(player.paused ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji('⏸️').setDisabled(false),
+            new ButtonBuilder().setCustomId('music_next').setStyle(ButtonStyle.Secondary).setEmoji('⏭️').setDisabled(false),
+            new ButtonBuilder().setCustomId('music_loop').setStyle(player.repeatMode === 'queue' || player.repeatMode === 'track' ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji(player.repeatMode === 'track' ? '🔂' : '🔁').setDisabled(false),
+            new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(false)
+        );
 
-    let qMsgId = queueMessageMap.get(guild.id);
-    let qMsg = null;
-    if (qMsgId) {
-        try { qMsg = await channel.messages.fetch(qMsgId); } catch (e) {}
-    }
+        let msgId = idleMessageMap.get(guild.id);
+        let msg = null;
+        if (msgId) {
+            try { msg = await channel.messages.fetch(msgId); } catch (e) {}
+        }
 
-    if (qMsg) {
-        await qMsg.edit({ content: null, embeds: [queueEmbed] }).catch(() => {});
-    } else {
-        const sentQueue = await channel.send({ embeds: [queueEmbed] });
-        queueMessageMap.set(guild.id, sentQueue.id);
+        if (msg) {
+            await msg.edit({ embeds: [playEmbed], components: [row], files: [] }).catch(() => {});
+        } else {
+            const sent = await channel.send({ embeds: [playEmbed], components: [row] });
+            idleMessageMap.set(guild.id, sent.id);
+        }
+
+        let qMsgId = queueMessageMap.get(guild.id);
+        let qMsg = null;
+        if (qMsgId) {
+            try { qMsg = await channel.messages.fetch(qMsgId); } catch (e) {}
+        }
+
+        if (qMsg) {
+            await qMsg.edit({ content: null, embeds: [queueEmbed] }).catch(() => {});
+        } else {
+            const sentQueue = await channel.send({ embeds: [queueEmbed] });
+            queueMessageMap.set(guild.id, sentQueue.id);
+        }
+    } finally {
+        isUpdatingMap.set(guild.id, false);
     }
 }
 
@@ -252,7 +277,7 @@ module.exports = {
                             topic: '디스코드 음악 봇 전용 채널입니다.'
                         });
                         musicChannels.set(guild.id, newChannel.id);
-                        await updateIdleMessage(newChannel);
+                        await updateIdleMessage(newChannel, true);
                         return interaction.editReply(`음악 채널을 새로 만들고 지정했어! 👉 <#${newChannel.id}>`);
                     } catch (error) {
                         return interaction.editReply('채널 생성 중에 오류가 발생했어.');
@@ -265,8 +290,8 @@ module.exports = {
                         return interaction.reply({ content: '텍스트 채널에서만 지정할 수 있어!', flags: [MessageFlags.Ephemeral] });
                     }
                     musicChannels.set(guild.id, targetChannel.id);
-                    await updateIdleMessage(targetChannel);
-                    return interaction.reply({ content: `현재 채널을 음악 채널로 지정했어! 👉 <#${targetChannel.id}>`, flags: [MessageFlags.Ephemeral] });
+                    await updateIdleMessage(targetChannel, true);
+                    return interaction.reply({ content: `현재 채널을 음악 채널로 지정하고 기존 메시지를 비웠어! 👉 <#${targetChannel.id}>`, flags: [MessageFlags.Ephemeral] });
                 }
 
                 if (action === '해제') {
@@ -299,8 +324,11 @@ module.exports = {
             const registeredChannelId = musicChannels.get(message.guild.id);
             if (!registeredChannelId || message.channel.id !== registeredChannelId) return;
 
-            const query = message.content;
+            const query = message.content ? message.content.trim() : '';
             await message.delete().catch(() => {});
+
+            // 빈 메시지(공백 및 이미지 전송 등) 방지
+            if (!query) return;
 
             const voiceChannel = message.member.voice.channel;
             if (!voiceChannel) {
@@ -322,25 +350,29 @@ module.exports = {
 
             if (!player.connected) player.connect();
 
-            const res = await player.search({ query, requester: message.author }, message.author);
-            if (!res.tracks.length) return;
+            try {
+                const res = await player.search({ query, requester: message.author }, message.author);
+                if (!res.tracks.length) return;
 
-            if (res.loadType === 'playlist') {
-                player.queue.add(res.tracks);
-            } else {
-                player.queue.add(res.tracks[0]);
-            }
+                if (res.loadType === 'playlist') {
+                    player.queue.add(res.tracks);
+                } else {
+                    player.queue.add(res.tracks[0]);
+                }
 
-            if (!player.playing && !player.paused) player.play();
+                if (!player.playing && !player.paused) player.play();
 
-            await updatePlayerMessage(player, client);
+                await updatePlayerMessage(player, client);
 
-            if (!playerIntervals.has(message.guild.id)) {
-                const interval = setInterval(async () => {
-                    if (!player.playing) return;
-                    await updatePlayerMessage(player, client);
-                }, 5000);
-                playerIntervals.set(message.guild.id, interval);
+                if (!playerIntervals.has(message.guild.id)) {
+                    const interval = setInterval(async () => {
+                        if (!player.playing) return;
+                        await updatePlayerMessage(player, client);
+                    }, 5000);
+                    playerIntervals.set(message.guild.id, interval);
+                }
+            } catch (err) {
+                console.error('검색 및 재생 오류:', err);
             }
         });
 
