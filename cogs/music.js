@@ -21,14 +21,14 @@ function formatTime(ms) {
 }
 
 function getLoopStatusText(player) {
-    const mode = player.loop || player.repeatMode || (player.trackRepeat ? 'track' : player.queueRepeat ? 'queue' : 'off');
+    const mode = player.repeatMode || player.loop || (player.trackRepeat ? 'track' : player.queueRepeat ? 'queue' : 'off');
     
     if (mode === 'track' || mode === 'song' || mode === 1) {
-        return '🔂 한곡 반복';
+        return '한 곡 반복';
     } else if (mode === 'queue' || mode === 'all' || mode === 2) {
-        return '🔁 전체 반복';
+        return '대기열 반복';
     }
-    return '➡️ off';
+    return '끔';
 }
 
 function getDisabledButtons() {
@@ -36,6 +36,7 @@ function getDisabledButtons() {
         new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪').setDisabled(true),
         new ButtonBuilder().setCustomId('music_pause').setStyle(ButtonStyle.Secondary).setEmoji('⏸️').setDisabled(true),
         new ButtonBuilder().setCustomId('music_next').setStyle(ButtonStyle.Secondary).setEmoji('⏭️').setDisabled(true),
+        new ButtonBuilder().setCustomId('music_loop').setStyle(ButtonStyle.Secondary).setEmoji('🔁').setDisabled(true),
         new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(true)
     );
 
@@ -122,7 +123,6 @@ async function updatePlayerMessage(player, client) {
             .setTitle('📜 대기열 목록');
 
         if (queueTracks.length > 0) {
-            // escapeMarkdown 적용으로 특수문자 마크다운 오작동 방지 및 \n\n으로 각 번호 항목 간격 생성
             const list = queueTracks.slice(0, 5).map((t, i) => {
                 const reqId = t.requester?.id || t.requester;
                 const requesterText = reqId ? ` (신청자: <@${reqId}>)` : '';
@@ -169,10 +169,18 @@ async function updatePlayerMessage(player, client) {
             )
             .setImage(artwork || null);
 
+        const mode = player.repeatMode || player.loop || (player.trackRepeat ? 'track' : player.queueRepeat ? 'queue' : 'off');
+        const isTrackLoop = mode === 'track' || mode === 'song' || mode === 1;
+        const isQueueLoop = mode === 'queue' || mode === 'all' || mode === 2;
+
+        const loopStyle = (isTrackLoop || isQueueLoop) ? ButtonStyle.Primary : ButtonStyle.Secondary;
+        const loopEmoji = isTrackLoop ? '🔂' : '🔁';
+
         const row1 = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('music_prev').setStyle(ButtonStyle.Secondary).setEmoji('⏪').setDisabled(false),
             new ButtonBuilder().setCustomId('music_pause').setStyle(player.paused ? ButtonStyle.Primary : ButtonStyle.Secondary).setEmoji(player.paused ? '▶️' : '⏸️').setDisabled(false),
             new ButtonBuilder().setCustomId('music_next').setStyle(ButtonStyle.Secondary).setEmoji('⏭️').setDisabled(false),
+            new ButtonBuilder().setCustomId('music_loop').setStyle(loopStyle).setEmoji(loopEmoji).setDisabled(false),
             new ButtonBuilder().setCustomId('music_stop').setStyle(ButtonStyle.Danger).setEmoji('⏹️').setDisabled(false)
         );
 
@@ -415,7 +423,7 @@ async function handleInteraction(client, interaction) {
 
     if (!interaction.isButton()) return;
     const validButtons = [
-        'music_prev', 'music_pause', 'music_next', 'music_stop',
+        'music_prev', 'music_pause', 'music_next', 'music_loop', 'music_stop',
         'music_vol_down', 'music_vol_up'
     ];
     if (!validButtons.includes(interaction.customId)) return;
@@ -439,6 +447,23 @@ async function handleInteraction(client, interaction) {
         }
     } else if (interaction.customId === 'music_next') {
         player.skip();
+    } else if (interaction.customId === 'music_loop') {
+        const currentMode = player.repeatMode || player.loop || (player.trackRepeat ? 'track' : player.queueRepeat ? 'queue' : 'off');
+        let nextMode = 'queue';
+        
+        if (currentMode === 'queue' || currentMode === 'all' || currentMode === 2) {
+            nextMode = 'track';
+        } else if (currentMode === 'track' || currentMode === 'song' || currentMode === 1) {
+            nextMode = 'off';
+        }
+
+        if (typeof player.setRepeatMode === 'function') {
+            player.setRepeatMode(nextMode);
+        } else if (typeof player.setLoop === 'function') {
+            player.setLoop(nextMode);
+        } else {
+            player.repeatMode = nextMode;
+        }
     } else if (interaction.customId === 'music_stop') {
         if (playerIntervals.has(interaction.guild.id)) {
             clearInterval(playerIntervals.get(interaction.guild.id));
