@@ -218,7 +218,7 @@ async function handleMessage(client, message) {
             for (const track of res.tracks) {
                 player.queue.add(track);
             }
-            const infoMsg = await message.channel.send(`✅ 플레이리스트 **${res.playlist.name}** (${res.tracks.length곡})을 대기열에 추가했어요!`);
+            const infoMsg = await message.channel.send(`✅ 플레이리스트 **${res.playlist.name}** (${res.tracks.length}곡)을 대기열에 추가했어요!`);
             setTimeout(() => infoMsg.delete().catch(() => {}), 4000);
         } else if (res.loadType === 'search' || res.loadType === 'track') {
             const track = res.tracks[0];
