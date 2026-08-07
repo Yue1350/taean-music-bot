@@ -183,7 +183,7 @@ module.exports = {
     description: '음악 채널 및 시스템 관리',
 
     async init(client) {
-        client.user.setActivity('태안 촌놈들 노래', { type: ActivityType.Listening });
+        client.user.setActivity('태안 촌놈들 노래 재생 중', { type: ActivityType.Playing });
 
         const commands = [
             new SlashCommandBuilder()
@@ -327,7 +327,6 @@ module.exports = {
             const query = message.content ? message.content.trim() : '';
             await message.delete().catch(() => {});
 
-            // 빈 메시지(공백 및 이미지 전송 등) 방지
             if (!query) return;
 
             const voiceChannel = message.member.voice.channel;
