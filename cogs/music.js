@@ -378,7 +378,7 @@ module.exports = {
 
         // 버튼 및 셀렉트 메뉴 인터랙션 처리
         client.on('interactionCreate', async interaction => {
-            // 🎛️ 필터 선택 메뉴(드롭다운) 처리
+            // 🎛️ 필터 선택 메뉴(드롭다운) 처리 (lavalink-client 전용)
             if (interaction.isStringSelectMenu() && interaction.customId === 'filter_select_menu') {
                 const player = client.lavalink.getPlayer(interaction.guild.id);
                 if (!player) return interaction.reply({ content: '재생 중인 플레이어가 없습니다.', flags: [MessageFlags.Ephemeral] });
@@ -386,33 +386,52 @@ module.exports = {
                 const selectedFilter = interaction.values[0];
                 await interaction.deferUpdate();
 
-                if (selectedFilter === 'clear') {
-                    if (player.filterManager) await player.filterManager.clearFilter();
-                    currentFilterMap.set(interaction.guild.id, '일반 (OFF)');
-                } else if (selectedFilter === 'bassboost') {
-                    if (player.filterManager) {
-                        await player.filterManager.setEqualizer([
-                            { band: 0, gain: 0.2 },
-                            { band: 1, gain: 0.15 },
-                            { band: 2, gain: 0.1 }
+                try {
+                    if (selectedFilter === 'clear') {
+                        await player.filterManager.resetFilters();
+                        currentFilterMap.set(interaction.guild.id, '일반 (OFF)');
+
+                    } else if (selectedFilter === 'bassboost') {
+                        await player.filterManager.resetFilters();
+                        player.filterManager.setEQ([
+                            { band: 0, gain: 0.25 },
+                            { band: 1, gain: 0.20 },
+                            { band: 2, gain: 0.15 },
+                            { band: 3, gain: 0.10 }
                         ]);
+                        await player.filterManager.commit();
+                        currentFilterMap.set(interaction.guild.id, '🔊 베이스 보스트');
+
+                    } else if (selectedFilter === 'nightcore') {
+                        await player.filterManager.resetFilters();
+                        player.filterManager.setTimeScale({
+                            speed: 1.25,
+                            pitch: 1.25,
+                            rate: 1.0
+                        });
+                        await player.filterManager.commit();
+                        currentFilterMap.set(interaction.guild.id, '⚡ 나이트코어');
+
+                    } else if (selectedFilter === 'vaporwave') {
+                        await player.filterManager.resetFilters();
+                        player.filterManager.setTimeScale({
+                            speed: 0.85,
+                            pitch: 0.8,
+                            rate: 1.0
+                        });
+                        await player.filterManager.commit();
+                        currentFilterMap.set(interaction.guild.id, '🌊 바포웨이브');
+
+                    } else if (selectedFilter === 'rotation') {
+                        await player.filterManager.resetFilters();
+                        player.filterManager.setRotation({
+                            rotationHz: 0.2
+                        });
+                        await player.filterManager.commit();
+                        currentFilterMap.set(interaction.guild.id, '🎧 3D 회전 오디오');
                     }
-                    currentFilterMap.set(interaction.guild.id, '🔊 베이스 보스트');
-                } else if (selectedFilter === 'nightcore') {
-                    if (player.filterManager) {
-                        await player.filterManager.setTimescale({ speed: 1.25, pitch: 1.25, rate: 1.0 });
-                    }
-                    currentFilterMap.set(interaction.guild.id, '⚡ 나이트코어');
-                } else if (selectedFilter === 'vaporwave') {
-                    if (player.filterManager) {
-                        await player.filterManager.setTimescale({ speed: 0.85, pitch: 0.8, rate: 1.0 });
-                    }
-                    currentFilterMap.set(interaction.guild.id, '🌊 바포웨이브');
-                } else if (selectedFilter === 'rotation') {
-                    if (player.filterManager) {
-                        await player.filterManager.setRotation({ rotationHz: 0.2 });
-                    }
-                    currentFilterMap.set(interaction.guild.id, '🎧 3D 회전 오디오');
+                } catch (err) {
+                    console.error('필터 적용 중 오류 발생:', err);
                 }
 
                 await updatePlayerMessage(player, client);
