@@ -3,8 +3,7 @@ const { SlashCommandBuilder, REST, Routes } = require('discord.js');
 module.exports = {
     name: 'music',
     description: '음악 재생 관련 명령어',
-    
-    // 봇이 켜질 때 슬러시 명령어를 등록하는 함수
+
     async init(client) {
         const commands = [
             new SlashCommandBuilder()
@@ -25,7 +24,6 @@ module.exports = {
             console.error(error);
         }
 
-        // 인터랙션 이벤트 처리 연결
         client.on('interactionCreate', async interaction => {
             if (!interaction.isChatInputCommand()) return;
 
