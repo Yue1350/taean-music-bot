@@ -1,7 +1,22 @@
+require('dotenv').config();
+const express = require('express');
 const { Client, GatewayIntentBits } = require('discord.js');
 const { LavalinkManager } = require('lavalink-client');
-const { setupMusicEvents, handleMessage, handleInteraction } = require('./cogs/music.js');
+const { setupMusicEvents, handleMessage, handleInteraction } = require('./cogs/music');
 
+// --- 1. Web Server (Render 포트 바인딩용) ---
+const app = express();
+const PORT = process.env.PORT || 10000;
+
+app.get('/', (req, res) => {
+    res.send('태안 노래봇이 정상 작동 중입니다!');
+});
+
+app.listen(PORT, () => {
+    console.log(`[Web] 웹 서버가 실행 중입니다. (Port: ${PORT})`);
+});
+
+// --- 2. Discord Client 설정 ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -11,36 +26,32 @@ const client = new Client({
     ]
 });
 
-// Lavalink 클라이언트 설정 (sendToShard 및 client 속성 추가 필수!)
+// --- 3. Lavalink 매니저 설정 ---
 client.lavalink = new LavalinkManager({
     nodes: [
         {
-            host: process.env.LAVALINK_HOST || 'localhost',
-            port: Number(process.env.LAVALINK_PORT) || 2333,
-            authorization: process.env.LAVALINK_SERVER_PASSWORD || 'yuedayo',
-            secure: false
+            authorization: process.env.LAVA_PASSWORD || 'youshallnotpass',
+            host: process.env.LAVA_HOST || 'localhost',
+            port: parseInt(process.env.LAVA_PORT) || 2333,
+            secure: process.env.LAVA_SECURE === 'true',
+            id: 'node-1'
         }
     ],
-    // 💡 이 부분이 필수로 들어가야 에러가 해결됩니다!
-    sendToShard: (guildId, payload) => {
-        const guild = client.guilds.cache.get(guildId);
-        if (guild) guild.shard.send(payload);
-    },
-    client: {
-        id: process.env.CLIENT_ID, // 봇의 디스코드 Application ID (숫자)
-        username: "MusicBot"
-    }
+    sendToShard: (guildId, payload) => client.guilds.cache.get(guildId)?.shard.send(payload),
+    autoPlay: true
 });
 
-// 디스코드 Raw 이벤트 전달 필수
-client.on("raw", d => client.lavalink.sendRawData(d));
-
-// 음악 이벤트 및 명령어 세팅 연동
+// --- 4. 이벤트 및 모듈 등록 ---
 setupMusicEvents(client);
 
+// 디스코드 음성 연결 상태 패킷을 라바링크로 보류 없이 전달해 주는 필수 이벤트
+client.on("raw", (d) => client.lavalink.sendRawData(d));
+
 client.once('ready', async () => {
-    await client.lavalink.init({ ...client.user });
-    console.log(`봇 로그인 성공: ${client.user.tag}`);
+    console.log(`[Bot] ${client.user.tag} 로 로그인 완료!`);
+
+    // Lavalink 매니저 초기화 시 client.user 객체 전달
+    await client.lavalink.init(client.user);
 });
 
 client.on('messageCreate', async (message) => {
@@ -51,4 +62,5 @@ client.on('interactionCreate', async (interaction) => {
     await handleInteraction(client, interaction);
 });
 
+// --- 5. Bot 로그인 ---
 client.login(process.env.DISCORD_TOKEN);
