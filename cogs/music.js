@@ -111,7 +111,13 @@ async function updatePlayerMessage(player, client) {
             .setTitle('📜 대기열 목록');
 
         if (queueTracks.length > 0) {
-            const list = queueTracks.slice(0, 5).map((t, i) => `${i + 1}. **${t.info.title}**`).join('\n');
+            // 숫자는 볼드 처리(**1.**), 노래 제목은 일반 텍스트
+            const list = queueTracks.slice(0, 5).map((t, i) => {
+                const reqId = t.requester?.id || t.requester;
+                const requesterText = reqId ? ` (신청자: <@${reqId}>)` : '';
+                return `**${i + 1}.** ${t.info.title}${requesterText}`;
+            }).join('\n');
+
             const remaining = queueTracks.length - 5;
             
             queueEmbed.setDescription(list);
@@ -137,13 +143,14 @@ async function updatePlayerMessage(player, client) {
 
         const displayVolume = Math.round(player.volume * 2);
         const trackUrl = currentTrack.info.uri || 'https://discord.com';
+        const currentReqId = currentTrack.requester?.id || currentTrack.requester;
 
         const playEmbed = new EmbedBuilder()
             .setColor('#5865F2')
             .setTitle(`🎵 ${currentTrack.info.title}`)
             .setURL(trackUrl)
             .addFields(
-                { name: '👤 신청자', value: `<@${currentTrack.requester?.id || currentTrack.requester}>`, inline: true },
+                { name: '👤 신청자', value: currentReqId ? `<@${currentReqId}>` : '알 수 없음', inline: true },
                 { name: '🔊 볼륨', value: `${displayVolume}%`, inline: true },
                 { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false }
             )
@@ -327,7 +334,6 @@ async function handleMessage(client, message) {
     if (!player.connected) await player.connect();
 
     try {
-        // player.search 메서드를 이용하여 음원 검색
         const res = await player.search({ query }, message.author);
 
         if (!res || !res.tracks || !res.tracks.length) return;
