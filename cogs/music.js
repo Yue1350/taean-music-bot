@@ -139,6 +139,14 @@ async function updatePlayerMessage(player, client) {
         const displayVolume = Math.round(player.volume * 2);
         const trackUrl = currentTrack.info.uri || 'https://discord.com';
 
+        // 반복 상태 텍스트 설정
+        let loopStatusText = '❌ OFF';
+        if (player.repeatMode === 'track') {
+            loopStatusText = '🔂 한 곡 반복';
+        } else if (player.repeatMode === 'queue') {
+            loopStatusText = '🔁 전체 반복';
+        }
+
         const playEmbed = new EmbedBuilder()
             .setColor('#5865F2')
             .setTitle(`🎵 ${currentTrack.info.title}`)
@@ -146,6 +154,7 @@ async function updatePlayerMessage(player, client) {
             .addFields(
                 { name: '👤 신청자', value: `<@${currentTrack.requester.id}>`, inline: true },
                 { name: '🔊 볼륨', value: `${displayVolume}%`, inline: true },
+                { name: '🔁 반복 모드', value: loopStatusText, inline: true },
                 { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false }
             )
             .setImage(artwork || null);
