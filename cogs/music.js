@@ -140,8 +140,8 @@ async function updatePlayerMessage(player, client) {
             queueEmbed.setDescription('대기열에 다음 노래가 없습니다.');
         }
 
-        const position = player.position;
-        const duration = currentTrack.info.duration;
+        const position = player.position || 0;
+        const duration = currentTrack.info.duration || 1;
         const progressBar = createProgressBar(position, duration);
         const timeText = `[${formatTime(position)} / ${formatTime(duration)}]`;
 
@@ -153,7 +153,7 @@ async function updatePlayerMessage(player, client) {
             }
         }
 
-        const displayVolume = Math.round(player.volume * 2);
+        const displayVolume = Math.round((player.volume || 0) * 2);
         const trackUrl = currentTrack.info.uri || 'https://discord.com';
         const currentReqId = currentTrack.requester?.id || currentTrack.requester;
 
@@ -228,28 +228,36 @@ function setupMusicEvents(client) {
         await updatePlayerMessage(player, client);
     });
 
-    client.lavalink.on('trackEnd', async (player) => {
-        const queueTracks = player.queue.tracks || Array.from(player.queue) || [];
-        
-        if (queueTracks.length === 0) {
-            if (playerIntervals.has(player.guildId)) {
-                clearInterval(playerIntervals.get(player.guildId));
-                playerIntervals.delete(player.guildId);
-            }
-            
-            player.destroy();
-            
-            const guild = client.guilds.cache.get(player.guildId);
-            if (guild) {
-                const channelId = musicChannels.get(guild.id);
-                if (channelId) {
-                    const channel = guild.channels.cache.get(channelId);
-                    if (channel) await updateIdleMessage(channel);
+    // 버그 방지를 위해 trackEnd 처리 로직 수정
+    client.lavalink.on('trackEnd', async (player, track, reason) => {
+        // 순간 동기화 문제 방지용 1초 대기
+        setTimeout(async () => {
+            if (!player || !player.guildId) return;
+
+            const currentTrack = player.queue.current;
+            const queueTracks = player.queue.tracks || Array.from(player.queue) || [];
+
+            // 정말로 현재 재생곡도 없고 대기열도 없을 때만 종료
+            if (!currentTrack && queueTracks.length === 0) {
+                if (playerIntervals.has(player.guildId)) {
+                    clearInterval(playerIntervals.get(player.guildId));
+                    playerIntervals.delete(player.guildId);
                 }
+                
+                player.destroy();
+                
+                const guild = client.guilds.cache.get(player.guildId);
+                if (guild) {
+                    const channelId = musicChannels.get(guild.id);
+                    if (channelId) {
+                        const channel = guild.channels.cache.get(channelId);
+                        if (channel) await updateIdleMessage(channel);
+                    }
+                }
+            } else {
+                await updatePlayerMessage(player, client);
             }
-        } else {
-            await updatePlayerMessage(player, client);
-        }
+        }, 1000);
     });
 
     client.on('voiceStateUpdate', async (oldState, newState) => {
@@ -371,7 +379,7 @@ async function handleMessage(client, message) {
 
         if (!playerIntervals.has(message.guild.id)) {
             const interval = setInterval(async () => {
-                if (!player.playing) return;
+                if (!player || !player.playing) return;
                 await updatePlayerMessage(player, client);
             }, 5000);
             playerIntervals.set(message.guild.id, interval);
@@ -474,11 +482,11 @@ async function handleInteraction(client, interaction) {
         await updateIdleMessage(channel);
         return;
     } else if (interaction.customId === 'music_vol_down') {
-        const currentDisplayVol = Math.round(player.volume * 2);
+        const currentDisplayVol = Math.round((player.volume || 0) * 2);
         const newDisplayVol = Math.max(0, currentDisplayVol - 10);
         player.setVolume(Math.round(newDisplayVol / 2));
     } else if (interaction.customId === 'music_vol_up') {
-        const currentDisplayVol = Math.round(player.volume * 2);
+        const currentDisplayVol = Math.round((player.volume || 0) * 2);
         const newDisplayVol = Math.min(100, currentDisplayVol + 10);
         player.setVolume(Math.round(newDisplayVol / 2));
     }
