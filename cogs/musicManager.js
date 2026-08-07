@@ -11,10 +11,10 @@ function initLavalink(client) {
     client.lavalink = new LavalinkManager({
         nodes: [
             {
-                host: process.env.LAVALINK_HOST || 'localhost',
-                port: Number(process.env.LAVALINK_PORT) || 2333,
-                authorization: process.env.LAVALINK_SERVER_PASSWORD || 'yuedayo',
-                secure: false
+                host: process.env.LAVA_HOST || 'localhost',
+                port: Number(process.env.LAVA_PORT) || 2333,
+                authorization: process.env.LAVA_PASSWORD || 'yuedayo',
+                secure: process.env.LAVA_SECURE === 'true'
             }
         ],
         sendToShard: (guildId, payload) => {
