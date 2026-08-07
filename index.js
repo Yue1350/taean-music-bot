@@ -47,10 +47,8 @@ setupMusicEvents(client);
 client.once('ready', async () => {
     console.log(`[Bot] ${client.user.tag} 로 로그인 완료!`);
 
-    // client.user 객체를 통째로 전달
+    // Lavalink 매니저 초기화시 client.user 객체 전달
     await client.lavalink.init(client.user);
-});
-    });
 });
 
 client.on('messageCreate', async (message) => {
