@@ -213,22 +213,13 @@ module.exports = {
                             { name: '생성', value: '생성' },
                             { name: '지정', value: '지정' },
                             { name: '해제', value: '해제' }
-                        )),
-            new SlashCommandBuilder()
-                .setName('볼륨')
-                .setDescription('음악 볼륨을 조절합니다 (1~100).')
-                .addIntegerOption(option =>
-                    option.setName('수치')
-                        .setDescription('설정할 볼륨 크기 (1~100)')
-                        .setRequired(true)
-                        .setMinValue(1)
-                        .setMaxValue(100))
+                        ))
         ];
 
         const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
         try {
             await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-            console.log('슬러시 명령어(음악채널, 볼륨) 등록 완료!');
+            console.log('슬러시 명령어(음악채널) 등록 완료!');
         } catch (error) {
             console.error(error);
         }
@@ -316,21 +307,6 @@ module.exports = {
                     musicChannels.delete(guild.id);
                     return interaction.reply({ content: '음악 채널 지정을 해제했습니다!', flags: [MessageFlags.Ephemeral] });
                 }
-            }
-
-            if (interaction.commandName === '볼륨') {
-                const player = client.lavalink.getPlayer(interaction.guild.id);
-                if (!player) {
-                    return interaction.reply({ content: '현재 재생 중인 음악이 없습니다.', flags: [MessageFlags.Ephemeral] });
-                }
-
-                const inputVol = interaction.options.getInteger('수치');
-                const targetVol = Math.round(inputVol / 2);
-
-                player.setVolume(targetVol);
-                await updatePlayerMessage(player, client);
-
-                return interaction.reply({ content: `🔊 볼륨을 **${inputVol}%**로 변경했습니다!`, flags: [MessageFlags.Ephemeral] });
             }
         });
 
@@ -435,12 +411,10 @@ module.exports = {
                 await updateIdleMessage(channel);
                 return;
             } else if (interaction.customId === 'music_vol_down') {
-                // UI 수치(1~100) 기준 10% 감소 (내부 volume은 1~50 기준)
                 const currentDisplayVol = Math.round(player.volume * 2);
                 const newDisplayVol = Math.max(0, currentDisplayVol - 10);
                 player.setVolume(Math.round(newDisplayVol / 2));
             } else if (interaction.customId === 'music_vol_up') {
-                // UI 수치(1~100) 기준 10% 증가 (내부 volume은 1~50 기준)
                 const currentDisplayVol = Math.round(player.volume * 2);
                 const newDisplayVol = Math.min(100, currentDisplayVol + 10);
                 player.setVolume(Math.round(newDisplayVol / 2));
