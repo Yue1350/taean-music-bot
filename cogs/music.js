@@ -30,8 +30,8 @@ function getDisabledButtons() {
     );
 
     const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('music_vol_down').setStyle(ButtonStyle.Secondary).setEmoji('➖').setLabel('볼륨 -').setDisabled(true),
-        new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setLabel('볼륨 +').setDisabled(true)
+        new ButtonBuilder().setCustomId('music_vol_down').setStyle(ButtonStyle.Secondary).setEmoji('➖').setDisabled(true),
+        new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setDisabled(true)
     );
 
     return [row1, row2];
@@ -114,7 +114,10 @@ async function updatePlayerMessage(player, client) {
         if (queueTracks.length > 0) {
             const list = queueTracks.slice(0, 5).map((t, i) => `${i + 1}. **${t.info.title}**`).join('\n');
             const remaining = queueTracks.length - 5;
-            queueEmbed.setDescription(list + (remaining > 0 ? `\n\n*외 ${remaining}곡*` : ''));
+            const remainingText = remaining > 0 ? `\n\n*외 ${remaining}곡*` : '';
+            
+            // 대기열 목록과 '외 N곡'을 임베드 설명(Description)에 통합 설정
+            queueEmbed.setDescription(`${list}${remainingText}`);
         } else {
             queueEmbed.setDescription('대기열에 다음 노래가 없습니다.');
         }
@@ -157,8 +160,8 @@ async function updatePlayerMessage(player, client) {
 
         // 두 번째 버튼 줄 (볼륨 -, 볼륨 +)
         const row2 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('music_vol_down').setStyle(ButtonStyle.Secondary).setEmoji('➖').setLabel('볼륨 -').setDisabled(false),
-            new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setLabel('볼륨 +').setDisabled(false)
+            new ButtonBuilder().setCustomId('music_vol_down').setStyle(ButtonStyle.Secondary).setEmoji('➖').setDisabled(false),
+            new ButtonBuilder().setCustomId('music_vol_up').setStyle(ButtonStyle.Secondary).setEmoji('➕').setDisabled(false)
         );
 
         let msgId = idleMessageMap.get(guild.id);
@@ -434,11 +437,11 @@ module.exports = {
                 return;
             } else if (interaction.customId === 'music_vol_down') {
                 const currentDisplayVol = Math.round(player.volume * 2);
-                const newDisplayVol = Math.max(0, currentDisplayVol - 5);
+                const newDisplayVol = Math.max(0, currentDisplayVol - 4);
                 player.setVolume(Math.round(newDisplayVol / 2));
             } else if (interaction.customId === 'music_vol_up') {
                 const currentDisplayVol = Math.round(player.volume * 2);
-                const newDisplayVol = Math.min(100, currentDisplayVol + 5);
+                const newDisplayVol = Math.min(100, currentDisplayVol + 4);
                 player.setVolume(Math.round(newDisplayVol / 2));
             }
 
