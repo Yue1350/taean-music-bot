@@ -1,22 +1,9 @@
-require('dotenv').config();
-const express = require('express');
-const { Client, GatewayIntentBits } = require('discord.js');
-const { LavalinkManager } = require('lavalink-client');
-const { setupMusicEvents, handleMessage, handleInteraction } = require('./cogs/music');
+const { Client, GatewayIntentBits, REST, Routes, PermissionFlagsBits, ChannelType, MessageFlags } = require('discord.js');
+const { initLavalink, musicChannels, playerIntervals, currentFilterMap } = require('./cogs/musicManager');
+const { handleButtonAndSelect } = require('./cogs/musicButtons');
+// 기존 music.js에 있던 메인 로직 함수들도 필요에 따라 가져오기
+const { setupMusicEvents, handleMessage, updatePlayerMessage } = require('./cogs/music');
 
-// --- 1. Web Server (Render 포트 바인딩용) ---
-const app = express();
-const PORT = process.env.PORT || 10000;
-
-app.get('/', (req, res) => {
-    res.send('태안 노래봇이 정상 작동 중입니다!');
-});
-
-app.listen(PORT, () => {
-    console.log(`[Web] 웹 서버가 실행 중입니다. (Port: ${PORT})`);
-});
-
-// --- 2. Discord Client 설정 ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -26,41 +13,55 @@ const client = new Client({
     ]
 });
 
-// --- 3. Lavalink 매니저 설정 ---
-client.lavalink = new LavalinkManager({
-    nodes: [
-        {
-            authorization: process.env.LAVA_PASSWORD || 'youshallnotpass',
-            host: process.env.LAVA_HOST || 'localhost',
-            port: parseInt(process.env.LAVA_PORT) || 2333,
-            secure: process.env.LAVA_SECURE === 'true',
-            id: 'node-1'
-        }
-    ],
-    sendToShard: (guildId, payload) => client.guilds.cache.get(guildId)?.shard.send(payload),
-    autoPlay: true
-});
+// 라바링크 초기화
+initLavalink(client);
 
-// --- 4. 이벤트 및 모듈 등록 ---
+// 음악 이벤트 등록
 setupMusicEvents(client);
 
-// 디스코드 음성 연결 상태 패킷을 라바링크로 보류 없이 전달해 주는 필수 이벤트
-client.on("raw", (d) => client.lavalink.sendRawData(d));
-
-client.once('ready', async () => {
-    console.log(`[Bot] ${client.user.tag} 로 로그인 완료!`);
-
-    // Lavalink 매니저 초기화 시 client.user 객체 전달
-    await client.lavalink.init(client.user);
+client.once('ready', () => {
+    client.lavalink.init(client.user.id);
+    console.log(`봇 로그인 완료: ${client.user.tag}`);
 });
 
+// 메시지(채팅 검색 및 재생) 처리
 client.on('messageCreate', async (message) => {
     await handleMessage(client, message);
 });
 
+// 인터랙션(버튼, 셀렉트 메뉴, 슬래시 명령어) 처리
 client.on('interactionCreate', async (interaction) => {
-    await handleInteraction(client, interaction);
+    if (interaction.isChatInputCommand() && interaction.commandName === '음악채널') {
+        const { options, guild } = interaction;
+        const action = options.getString('작업');
+
+        if (action === '생성') {
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+            try {
+                const newChannel = await guild.channels.create({
+                    name: '🎵-음악-채널',
+                    type: ChannelType.GuildText,
+                    topic: '디스코드 음악 봇 전용 채널입니다.'
+                });
+                musicChannels.set(guild.id, newChannel.id);
+                return interaction.editReply(`음악 채널을 새로 만들고 지정했습니다! 👉 <#${newChannel.id}>`);
+            } catch (error) {
+                return interaction.editReply('채널 생성 중에 오류가 발생했습니다.');
+            }
+        }
+        if (action === '지정') {
+            const targetChannel = interaction.channel;
+            musicChannels.set(guild.id, targetChannel.id);
+            return interaction.reply({ content: `현재 채널을 음악 채널로 지정했습니다! 👉 <#${targetChannel.id}>`, flags: [MessageFlags.Ephemeral] });
+        }
+        if (action === '해제') {
+            musicChannels.delete(guild.id);
+            return interaction.reply({ content: '음악 채널 지정을 해제했습니다!', flags: [MessageFlags.Ephemeral] });
+        }
+    }
+
+    // 버튼 및 필터 셀렉트 메뉴 처리 위임
+    await handleButtonAndSelect(client, interaction, updatePlayerMessage);
 });
 
-// --- 5. Bot 로그인 ---
 client.login(process.env.DISCORD_TOKEN);
