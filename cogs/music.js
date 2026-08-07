@@ -44,13 +44,15 @@ module.exports = {
                 if (!player) {
                     player = client.lavalink.createPlayer({
                         guildId: guild.id,
-                        voiceChannel: voiceChannel.id,
-                        textChannel: interaction.channel.id,
+                        voiceChannelId: voiceChannel.id, // voiceChannelId로 수정 완료
+                        textChannelId: interaction.channel.id, // textChannelId로 수정 완료
                         selfDeaf: true
                     });
                 }
 
-                if (!player.connected) player.connect();
+                if (!player.connected) {
+                    player.connect();
+                }
 
                 const res = await player.search({ query, requester: member.user }, interaction.user);
                 if (!res.tracks.length) {
