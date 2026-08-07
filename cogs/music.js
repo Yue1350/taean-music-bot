@@ -139,12 +139,12 @@ async function updatePlayerMessage(player, client) {
         const displayVolume = Math.round(player.volume * 2);
         const trackUrl = currentTrack.info.uri || 'https://discord.com';
 
-        // 반복 상태 텍스트 설정
-        let loopStatusText = '❌ OFF';
+        // 반복 상태 텍스트 설정 (이모티콘 제거)
+        let loopStatusText = 'OFF';
         if (player.repeatMode === 'track') {
-            loopStatusText = '🔂 한 곡 반복';
+            loopStatusText = '한 곡 반복';
         } else if (player.repeatMode === 'queue') {
-            loopStatusText = '🔁 전체 반복';
+            loopStatusText = '전체 반복';
         }
 
         const playEmbed = new EmbedBuilder()
