@@ -6,7 +6,7 @@ const queueMessageMap = new Map();
 const playerIntervals = new Map();
 
 function createProgressBar(current, total) {
-    const size = 14; // 2개 추가하여 14개로 변경
+    const size = 15;
     const progress = Math.min(Math.max(current / total, 0), 1);
     const pos = Math.round(progress * size);
     return '➖'.repeat(pos) + '🔘' + '➖'.repeat(size - pos);
@@ -74,17 +74,17 @@ async function updatePlayerMessage(player, client) {
         }
     }
 
-    // 실제 작동 볼륨에 2를 곱해 사용자용 표기 볼륨 산출
     const displayVolume = Math.round(player.volume * 2);
     const trackUrl = currentTrack.info.uri || 'https://discord.com';
 
     const playEmbed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle(`🎵 ${currentTrack.info.title}`)
-        .setURL(trackUrl) // 제목 클릭 시 해당 노래 링크로 이동
+        .setURL(trackUrl)
         .addFields(
             { name: '👤 신청자', value: `<@${currentTrack.requester.id}>`, inline: true },
             { name: '🔊 볼륨', value: `${displayVolume}%`, inline: true },
+            { name: '\u200b', value: '\u200b', inline: false },
             { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false }
         )
         .setImage(artwork || null);
@@ -129,7 +129,6 @@ module.exports = {
     description: '음악 채널 및 시스템 관리',
 
     async init(client) {
-        // 봇 상태 표시 설정
         client.user.setActivity('태안 촌놈들 노래', { type: ActivityType.Listening });
 
         const commands = [
@@ -257,7 +256,7 @@ module.exports = {
                 }
 
                 const inputVol = interaction.options.getInteger('수치');
-                const targetVol = Math.round(inputVol / 2); // 입력받은 값의 절반 적용
+                const targetVol = Math.round(inputVol / 2);
 
                 player.setVolume(targetVol);
                 await updatePlayerMessage(player, client);
@@ -288,7 +287,7 @@ module.exports = {
                     voiceChannelId: voiceChannel.id,
                     textChannelId: message.channel.id,
                     selfDeaf: true,
-                    volume: 10 // 표기 볼륨 20% 기준 (작동 볼륨 10)
+                    volume: 10
                 });
             }
 
@@ -332,7 +331,6 @@ module.exports = {
                     player.seek(0);
                 }
             } else if (interaction.customId === 'music_pause') {
-                // 안전하게 일시정지 / 재개 상태를 토글하도록 수정
                 if (typeof player.setPaused === 'function') {
                     player.setPaused(!player.paused);
                 } else {
