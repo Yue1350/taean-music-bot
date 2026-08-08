@@ -1,18 +1,21 @@
 {
-  "name": "lavalink-music-bot",
+  "name": "discord-music-bot",
   "version": "1.0.0",
-  "description": "Discord music bot using Lavalink and discord.js",
+  "description": "Discord Music Bot without yt-dlp / Lavalink",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "@discordjs/voice": "^0.18.0",
-    "@distube/ytdl-core": "^4.15.9",
+    "@distube/ytdl-core": "^4.16.1",
     "discord.js": "^14.18.0",
     "dotenv": "^16.4.7",
+    "express": "^4.21.2",
     "ffmpeg-static": "^5.2.0",
-    "sodium-native": "^4.1.1",
-    "express": "*"
+    "sodium-native": "^4.1.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
