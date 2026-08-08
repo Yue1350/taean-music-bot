@@ -15,17 +15,33 @@ const play = require("play-dl");
 
 keepAlive();
 
-// cookies.txt 파일이 존재하는 경우 play-dl에 경로 설정
-const cookiePath = path.join(__dirname, "cookies.txt");
-if (fs.existsSync(cookiePath)) {
-  play.setToken({
-    youtube: {
-      cookie: fs.readFileSync(cookiePath, "utf8"), // 파일 내용을 읽어서 전달하거나 경로를 전달할 수 있어요
-    },
-  });
-  console.log("유튜브 cookies.txt 적용 완료!");
+// 1. Render Secret Files 경로 확인 (/etc/secrets/cookies.txt 또는 프로젝트 루트)
+const secretCookiePath = "/etc/secrets/cookies.txt";
+const localCookiePath = path.join(__dirname, "cookies.txt");
+
+let finalCookiePath = null;
+
+if (fs.existsSync(secretCookiePath)) {
+  finalCookiePath = secretCookiePath;
+} else if (fs.existsSync(localCookiePath)) {
+  finalCookiePath = localCookiePath;
+}
+
+// 2. cookies.txt 적용
+if (finalCookiePath) {
+  try {
+    const cookieData = fs.readFileSync(finalCookiePath, "utf8");
+    play.setToken({
+      youtube: {
+        cookie: cookieData,
+      },
+    });
+    console.log(`유튜브 cookies.txt 적용 완료! (경로: ${finalCookiePath})`);
+  } catch (err) {
+    console.error("쿠키 파일을 읽는 중 오류가 발생했어요:", err);
+  }
 } else {
-  console.log("cookies.txt 파일이 없습니다. 쿠키 없이 실행합니다.");
+  console.log("cookies.txt 파일을 찾을 수 없어 쿠키 없이 실행합니다.");
 }
 
 const client = new Client({
