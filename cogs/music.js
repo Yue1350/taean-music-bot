@@ -296,10 +296,6 @@ function setupMusicEvents(client) {
         await updatePlayerMessage(player, client);
     });
 
-    client.lavalink.on('queueEnd', async (player) => {
-        await hardResetGuildPlayer(player.guildId, client);
-    });
-
     client.on('voiceStateUpdate', async (oldState, newState) => {
         if (oldState.member.id === client.user.id && !newState.channelId) {
             await hardResetGuildPlayer(oldState.guild.id, client);
