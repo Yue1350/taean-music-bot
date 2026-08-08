@@ -443,7 +443,7 @@ async function handleInteraction(client, interaction) {
                 await GuildSettings.findOneAndUpdate(
                     { guildId: guild.id },
                     { channelId: newChannel.id },
-                    { upsert: true, new: true }
+                    { upsert: true, returnDocument: 'after' }
                 );
 
                 await updateIdleMessage(newChannel, true);
@@ -464,7 +464,7 @@ async function handleInteraction(client, interaction) {
             await GuildSettings.findOneAndUpdate(
                 { guildId: guild.id },
                 { channelId: targetChannel.id },
-                { upsert: true, new: true }
+                { upsert: true, returnDocument: 'after' }
             );
 
             await updateIdleMessage(targetChannel, true);
