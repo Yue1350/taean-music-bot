@@ -1,5 +1,5 @@
 require("dotenv").config();
-const keepAlive = require("./keep_alive.js"); // keep_alive 불러오기
+const keepAlive = require("./keep_alive.js");
 
 const { Client, GatewayIntentBits } = require("discord.js");
 const {
@@ -8,10 +8,10 @@ const {
   createAudioResource,
   AudioPlayerStatus,
   StreamType,
+  VoiceConnectionStatus,
 } = require("@discordjs/voice");
 const ytdl = require("@distube/ytdl-core");
 
-// 24시간 서버 유지를 위한 Express 실행
 keepAlive();
 
 const client = new Client({
@@ -51,9 +51,22 @@ client.on("messageCreate", async (message) => {
         adapterCreator: message.guild.voiceAdapterCreator,
       });
 
+      // 쿠키 설정으로 유튜브 IP 차단 우회
+      const agentOptions = process.env.YOUTUBE_COOKIE
+        ? {
+            requestOptions: {
+              headers: {
+                cookie: process.env.YOUTUBE_COOKIE,
+              },
+            },
+          }
+        : {};
+
       const stream = ytdl(url, {
         filter: "audioonly",
         highWaterMark: 1 << 25,
+        dlChunkSize: 0,
+        ...agentOptions,
       });
 
       const resource = createAudioResource(stream, {
@@ -66,14 +79,21 @@ client.on("messageCreate", async (message) => {
 
       message.reply("🎵 노래 재생을 시작할게요!");
 
+      // 안전한 연결 종료 처리 함수
+      const safeDestroy = () => {
+        if (connection.state.status !== VoiceConnectionStatus.Destroyed) {
+          connection.destroy();
+        }
+      };
+
       player.on(AudioPlayerStatus.Idle, () => {
-        connection.destroy();
+        safeDestroy();
       });
 
       player.on("error", (error) => {
         console.error("재생 중 에러 발생:", error);
         message.channel.send("노래 재생 중 오류가 발생했어요.");
-        connection.destroy();
+        safeDestroy();
       });
     } catch (error) {
       console.error(error);
