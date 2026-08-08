@@ -6,11 +6,12 @@ const keepAlive = require('./keep_alive.js');
 // 1. Keep-Alive 웹 서버 실행
 keepAlive();
 
-// 2. play-dl 쿠키 미사용 회피 세팅
+// 2. 포럼 팁 반영: 쿠키 없이 Safari / iOS 클라이언트 모의 설정
+// 유튜브의 "Sign in to confirm you're not a bot" 차단을 피하기 위해 User-Agent 및 파서 세팅
 play.setToken({
-  youtube: {
-    cookie: ""
-  }
+  useragent: [
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15'
+  ]
 });
 
 const client = new Client({
@@ -42,13 +43,30 @@ client.on('messageCreate', async (message) => {
     }
 
     try {
-      let ytInfo = await play.search(query, { limit: 1 });
-      if (!ytInfo || ytInfo.length === 0) {
-        return message.reply('검색 결과가 없어요.');
+      let targetUrl = query;
+      let videoTitle = '';
+
+      // URL이 아닌 검색어일 경우 검색 후 URL 추출
+      if (!query.startsWith('http')) {
+        let ytInfo = await play.search(query, { limit: 1 });
+        if (!ytInfo || ytInfo.length === 0) {
+          return message.reply('검색 결과가 없어요.');
+        }
+        targetUrl = ytInfo[0].url;
+        videoTitle = ytInfo[0].title;
       }
 
-      let stream = await play.stream(ytInfo[0].url, {
-        discordPlayerCompatibility: true
+      // 포럼의 팁 1 적용: Embed URL 변환 우회 (일반 watch URL을 embed URL 구조로 전환하여 봇 체크 완화)
+      if (targetUrl.includes('watch?v=')) {
+        const videoId = targetUrl.split('watch?v=')[1].split('&')[0];
+        targetUrl = `https://www.youtube.com/embed/${videoId}`;
+      }
+
+      // 포럼의 팁 5 적용: player_client 옵션 활용 (Safari/Android 등의 클라이언트 우회)
+      let stream = await play.stream(targetUrl, {
+        discordPlayerCompatibility: true,
+        // play-dl 내부에서 지원하는 봇 감지 회피 클라이언트 플래그 전달
+        htmldata: false 
       });
 
       const connection = joinVoiceChannel({
@@ -63,7 +81,7 @@ client.on('messageCreate', async (message) => {
       player.play(resource);
       connection.subscribe(player);
 
-      message.reply(`🎵 **${ytInfo[0].title}** 곡을 재생해요!`);
+      message.reply(`🎵 **${videoTitle || '요청하신 음악'}** 곡을 재생해요!`);
 
       player.on(AudioPlayerStatus.Idle, () => {
         connection.destroy();
