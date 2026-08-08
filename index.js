@@ -1,4 +1,5 @@
-require("dotenv").config(); // .env 파일의 환경변수를 process.env로 로드해요
+require("dotenv").config();
+const keepAlive = require("./keep_alive.js"); // keep_alive 불러오기
 
 const { Client, GatewayIntentBits } = require("discord.js");
 const {
@@ -9,6 +10,9 @@ const {
   StreamType,
 } = require("@discordjs/voice");
 const ytdl = require("@distube/ytdl-core");
+
+// 24시간 서버 유지를 위한 Express 실행
+keepAlive();
 
 const client = new Client({
   intents: [
@@ -37,7 +41,7 @@ client.on("messageCreate", async (message) => {
       return message.reply("음성 채널에 먼저 들어와 주세요!");
     }
     if (!url || !ytdl.validateURL(url)) {
-      return message.reply("올바른 유튜브 URL을 입력해 주세요! (예: !play https://www.youtube.com/watch?v=...)");
+      return message.reply("올바른 유튜브 URL을 입력해 주세요!");
     }
 
     try {
@@ -78,5 +82,4 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// 환경변수 DISCORD_TOKEN을 사용해 로그인해요
 client.login(process.env.DISCORD_TOKEN);
