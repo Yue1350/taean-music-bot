@@ -11,8 +11,16 @@ const {
 } = require("@discordjs/voice");
 const play = require("play-dl");
 
-// 24시간 가동용 Express 서버 실행
 keepAlive();
+
+// play-dl 쿠키 설정 (환경변수 사용)
+if (process.env.YOUTUBE_COOKIE) {
+  play.setToken({
+    youtube: {
+      cookie: process.env.YOUTUBE_COOKIE,
+    },
+  });
+}
 
 const client = new Client({
   intents: [
