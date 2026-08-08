@@ -7,11 +7,11 @@ const {
   createAudioPlayer,
   createAudioResource,
   AudioPlayerStatus,
-  StreamType,
   VoiceConnectionStatus,
 } = require("@discordjs/voice");
-const ytdl = require("@distube/ytdl-core");
+const play = require("play-dl");
 
+// 24시간 가동용 Express 서버 실행
 keepAlive();
 
 const client = new Client({
@@ -34,43 +34,42 @@ client.on("messageCreate", async (message) => {
   const command = args.shift().toLowerCase();
 
   if (command === "play") {
-    const url = args[0];
+    const query = args.join(" ");
     const voiceChannel = message.member.voice.channel;
 
     if (!voiceChannel) {
       return message.reply("음성 채널에 먼저 들어와 주세요!");
     }
-    if (!url || !ytdl.validateURL(url)) {
-      return message.reply("올바른 유튜브 URL을 입력해 주세요!");
+    if (!query) {
+      return message.reply("유튜브 링크 또는 검색어를 입력해 주세요!");
     }
 
     try {
+      // 1. play-dl을 이용한 음원 검색 또는 URL 검증
+      let stream;
+      const ytValidate = await play.validate(query);
+
+      if (ytValidate === "yt_video") {
+        stream = await play.stream(query);
+      } else {
+        // 링크가 아닌 키워드일 경우 검색
+        const searchResults = await play.search(query, { limit: 1 });
+        if (!searchResults.length) {
+          return message.reply("검색 결과를 찾을 수 없어요!");
+        }
+        stream = await play.stream(searchResults[0].url);
+      }
+
+      // 2. 음성 채널 연결
       const connection = joinVoiceChannel({
         channelId: voiceChannel.id,
         guildId: message.guild.id,
         adapterCreator: message.guild.voiceAdapterCreator,
       });
 
-      // 쿠키 설정으로 유튜브 IP 차단 우회
-      const agentOptions = process.env.YOUTUBE_COOKIE
-        ? {
-            requestOptions: {
-              headers: {
-                cookie: process.env.YOUTUBE_COOKIE,
-              },
-            },
-          }
-        : {};
-
-      const stream = ytdl(url, {
-        filter: "audioonly",
-        highWaterMark: 1 << 25,
-        dlChunkSize: 0,
-        ...agentOptions,
-      });
-
-      const resource = createAudioResource(stream, {
-        inputType: StreamType.Arbitrary,
+      // 3. 오디오 리소스 및 플레이어 생성
+      const resource = createAudioResource(stream.stream, {
+        inputType: stream.type,
       });
       const player = createAudioPlayer();
 
@@ -79,7 +78,7 @@ client.on("messageCreate", async (message) => {
 
       message.reply("🎵 노래 재생을 시작할게요!");
 
-      // 안전한 연결 종료 처리 함수
+      // 음성 연결 중복 종료(Cannot destroy VoiceConnection) 오류 방지 함수
       const safeDestroy = () => {
         if (connection.state.status !== VoiceConnectionStatus.Destroyed) {
           connection.destroy();
