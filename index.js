@@ -13,9 +13,10 @@ const {
 } = require("@discordjs/voice");
 const play = require("play-dl");
 
+// Render 24시간 상시 가동용 Express 서버 실행
 keepAlive();
 
-// 1. Render Secret Files 또는 로컬 쿠키 파일 경로 탐색
+// 1. Render Secret Files 또는 로컬 cookies.txt 파일 경로 탐색
 const secretCookiePath = "/etc/secrets/cookies.txt";
 const localCookiePath = path.join(__dirname, "cookies.txt");
 
@@ -27,17 +28,15 @@ if (fs.existsSync(secretCookiePath)) {
   finalCookiePath = localCookiePath;
 }
 
-// 2. Netscape 포맷(cookies.txt)을 HTTP Cookie Header 형태(key=value; ...)로 변환하는 함수
+// 2. Netscape 포맷(cookies.txt)을 HTTP Header용 문자열(key=value; ...)로 정제하는 함수
 function parseCookiesTxt(rawText) {
   const cookies = [];
   const lines = rawText.split(/\r?\n/);
 
   for (const line of lines) {
-    // 빈 줄 및 주석(#) 제거
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
 
-    // 탭(\t) 구분자로 분할 (Netscape 포맷은 7개 필드)
     const parts = trimmed.split("\t");
     if (parts.length >= 7) {
       const key = parts[5].trim();
@@ -51,7 +50,7 @@ function parseCookiesTxt(rawText) {
   return cookies.join("; ");
 }
 
-// 3. cookies.txt 정제 후 play-dl에 설정
+// 3. 정제된 쿠키를 play-dl에 설정
 if (finalCookiePath) {
   try {
     const rawCookieData = fs.readFileSync(finalCookiePath, "utf8");
@@ -74,8 +73,7 @@ if (finalCookiePath) {
   console.log("cookies.txt 파일을 찾을 수 없어 쿠키 없이 실행합니다.");
 }
 
-// (이하 client 및 messageCreate 이벤트 로직은 동일)
-
+// 4. 디스코드 클라이언트 설정
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -99,21 +97,38 @@ client.on("messageCreate", async (message) => {
     const query = args.join(" ");
     const voiceChannel = message.member.voice.channel;
 
-    if (!voiceChannel) return message.reply("음성 채널에 먼저 들어와 주세요!");
-    if (!query) return message.reply("검색어나 링크를 입력해 주세요!");
+    if (!voiceChannel) {
+      return message.reply("음성 채널에 먼저 들어와 주세요!");
+    }
+    if (!query) {
+      return message.reply("검색어나 유튜브 링크를 입력해 주세요!");
+    }
 
     try {
-      let stream;
+      let targetUrl = null;
       const ytValidate = await play.validate(query);
 
+      // URL 직접 입력과 검색어 입력 구분 처리
       if (ytValidate === "yt_video") {
-        stream = await play.stream(query);
+        targetUrl = query;
       } else {
         const searchResults = await play.search(query, { limit: 1 });
-        if (!searchResults.length) return message.reply("검색 결과가 없어요!");
-        stream = await play.stream(searchResults[0].url);
+
+        if (!searchResults || searchResults.length === 0) {
+          return message.reply("검색 결과를 찾을 수 없어요!");
+        }
+
+        targetUrl = searchResults[0].url;
       }
 
+      if (!targetUrl) {
+        return message.reply("올바른 영상 URL을 가져오지 못했어요.");
+      }
+
+      // 오디오 스트림 추출
+      const stream = await play.stream(targetUrl);
+
+      // 음성 채널 연결
       const connection = joinVoiceChannel({
         channelId: voiceChannel.id,
         guildId: message.guild.id,
@@ -130,19 +145,24 @@ client.on("messageCreate", async (message) => {
 
       message.reply("🎵 노래 재생을 시작할게요!");
 
+      // 음성 연결 중복 종료(Cannot destroy VoiceConnection) 방지 함수
       const safeDestroy = () => {
         if (connection.state.status !== VoiceConnectionStatus.Destroyed) {
           connection.destroy();
         }
       };
 
-      player.on(AudioPlayerStatus.Idle, () => safeDestroy());
+      player.on(AudioPlayerStatus.Idle, () => {
+        safeDestroy();
+      });
+
       player.on("error", (error) => {
         console.error("재생 중 에러 발생:", error);
+        message.channel.send("노래 재생 중 오류가 발생했어요.");
         safeDestroy();
       });
     } catch (error) {
-      console.error(error);
+      console.error("Play 명령어 처리 에러:", error);
       message.reply("노래를 불러오는 중에 문제가 발생했어요.");
     }
   }
