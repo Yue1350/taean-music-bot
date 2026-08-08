@@ -1,98 +1,66 @@
+require('dotenv').config();
+const express = require('express');
 const { Client, GatewayIntentBits } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
-const play = require('play-dl');
-const keepAlive = require('./keep_alive.js');
+const { LavalinkManager } = require('lavalink-client');
+const { setupMusicEvents, handleMessage, handleInteraction } = require('./cogs/music');
 
-// 1. Keep-Alive 웹 서버 실행
-keepAlive();
+// --- 1. Web Server (Render 포트 바인딩용) ---
+const app = express();
+const PORT = process.env.PORT || 10000;
 
-// 2. 포럼 팁 반영: 쿠키 없이 Safari / iOS 클라이언트 모의 설정
-// 유튜브의 "Sign in to confirm you're not a bot" 차단을 피하기 위해 User-Agent 및 파서 세팅
-play.setToken({
-  useragent: [
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15'
-  ]
+app.get('/', (req, res) => {
+    res.send('태안 노래봇이 정상 작동 중입니다!');
 });
 
+app.listen(PORT, () => {
+    console.log(`[Web] 웹 서버가 실행 중입니다. (Port: ${PORT})`);
+});
+
+// --- 2. Discord Client 설정 ---
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
 });
 
-const PREFIX = '!';
+// --- 3. Lavalink 매니저 설정 ---
+client.lavalink = new LavalinkManager({
+    nodes: [
+        {
+            authorization: process.env.LAVA_PASSWORD || 'youshallnotpass',
+            host: process.env.LAVA_HOST || 'localhost',
+            port: parseInt(process.env.LAVA_PORT) || 2333,
+            secure: process.env.LAVA_SECURE === 'true',
+            id: 'node-1'
+        }
+    ],
+    sendToShard: (guildId, payload) => client.guilds.cache.get(guildId)?.shard.send(payload),
+    autoPlay: true
+});
+
+// --- 4. 이벤트 및 모듈 등록 ---
+setupMusicEvents(client);
+
+// 디스코드 음성 연결 상태 패킷을 라바링크로 보류 없이 전달해 주는 필수 이벤트
+client.on("raw", (d) => client.lavalink.sendRawData(d));
+
+client.once('ready', async () => {
+    console.log(`[Bot] ${client.user.tag} 로 로그인 완료!`);
+
+    // Lavalink 매니저 초기화 시 client.user 객체 전달
+    await client.lavalink.init(client.user);
+});
 
 client.on('messageCreate', async (message) => {
-  if (message.author.bot || !message.content.startsWith(PREFIX)) return;
-
-  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-  const command = args.shift().toLowerCase();
-
-  if (command === '재생' || command === 'play') {
-    const voiceChannel = message.member.voice.channel;
-    if (!voiceChannel) {
-      return message.reply('먼저 음성 채널에 입장해 주세요!');
-    }
-
-    const query = args.join(' ');
-    if (!query) {
-      return message.reply('재생할 노래 제목이나 유튜브 링크를 입력해 주세요.');
-    }
-
-    try {
-      let targetUrl = query;
-      let videoTitle = '';
-
-      // URL이 아닌 검색어일 경우 검색 후 URL 추출
-      if (!query.startsWith('http')) {
-        let ytInfo = await play.search(query, { limit: 1 });
-        if (!ytInfo || ytInfo.length === 0) {
-          return message.reply('검색 결과가 없어요.');
-        }
-        targetUrl = ytInfo[0].url;
-        videoTitle = ytInfo[0].title;
-      }
-
-      // 포럼의 팁 1 적용: Embed URL 변환 우회 (일반 watch URL을 embed URL 구조로 전환하여 봇 체크 완화)
-      if (targetUrl.includes('watch?v=')) {
-        const videoId = targetUrl.split('watch?v=')[1].split('&')[0];
-        targetUrl = `https://www.youtube.com/embed/${videoId}`;
-      }
-
-      // 포럼의 팁 5 적용: player_client 옵션 활용 (Safari/Android 등의 클라이언트 우회)
-      let stream = await play.stream(targetUrl, {
-        discordPlayerCompatibility: true,
-        // play-dl 내부에서 지원하는 봇 감지 회피 클라이언트 플래그 전달
-        htmldata: false 
-      });
-
-      const connection = joinVoiceChannel({
-        channelId: voiceChannel.id,
-        guildId: message.guild.id,
-        adapterCreator: message.guild.voiceAdapterCreator,
-      });
-
-      const resource = createAudioResource(stream.stream, { inputType: stream.type });
-      const player = createAudioPlayer();
-
-      player.play(resource);
-      connection.subscribe(player);
-
-      message.reply(`🎵 **${videoTitle || '요청하신 음악'}** 곡을 재생해요!`);
-
-      player.on(AudioPlayerStatus.Idle, () => {
-        connection.destroy();
-      });
-
-    } catch (error) {
-      console.error(error);
-      message.reply('유튜브 스트리밍을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.');
-    }
-  }
+    await handleMessage(client, message);
 });
 
-// DISCORD_TOKEN 환경 변수로 로그인
+client.on('interactionCreate', async (interaction) => {
+    await handleInteraction(client, interaction);
+});
+
+// --- 5. Bot 로그인 ---
 client.login(process.env.DISCORD_TOKEN);
