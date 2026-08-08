@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
 const { LavalinkManager } = require('lavalink-client');
 const { setupMusicEvents, handleMessage, handleInteraction, loadMusicChannels } = require('./cogs/music');
 
@@ -66,6 +66,9 @@ client.on("raw", (d) => client.lavalink.sendRawData(d));
 client.once('ready', async () => {
     console.log(`[Bot] ${client.user.tag} 로 로그인 완료!`);
     await client.lavalink.init(client.user);
+
+    // 상태 메세지 설정 (Playing: ~하는 중)
+    client.user.setActivity('태안 촌놈들 노래 재생 중', { type: ActivityType.Playing });
 });
 
 client.on('messageCreate', async (message) => {
