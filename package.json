@@ -10,6 +10,7 @@
     "discord.js": "*",
     "dotenv": "*",
     "express": "*",
-    "lavalink-client": "*"
+    "lavalink-client": "*",
+    "mongoose": "*"
   }
 }
