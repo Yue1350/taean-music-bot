@@ -211,14 +211,10 @@ async function updatePlayerMessage(player, client) {
         const timeText = `[${formatTime(position)} / ${formatTime(duration)}]`;
 
         let artwork = currentTrack.info.artworkUrl;
-        if (!artwork && currentTrack.info.identifier) {
-            artwork = `https://img.youtube.com/vi/${currentTrack.info.identifier}/hqdefault.jpg`;
-        }
-        
         if (!artwork && currentTrack.info.uri) {
-            const urlMatch = currentTrack.info.uri.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+            const urlMatch = currentTrack.info.uri.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
             if (urlMatch && urlMatch[1]) {
-                artwork = `https://img.youtube.com/vi/${urlMatch[1]}/hqdefault.jpg`;
+                artwork = `https://img.youtube.com/vi/${urlMatch[1]}/maxresdefault.jpg`;
             }
         }
 
@@ -298,6 +294,10 @@ function setupMusicEvents(client) {
 
     client.lavalink.on('trackAdd', async (player) => {
         await updatePlayerMessage(player, client);
+    });
+
+    client.lavalink.on('queueEnd', async (player) => {
+        await hardResetGuildPlayer(player.guildId, client);
     });
 
     client.on('voiceStateUpdate', async (oldState, newState) => {
