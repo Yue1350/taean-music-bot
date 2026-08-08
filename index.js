@@ -1,8 +1,9 @@
 require('dotenv').config();
 const express = require('express');
+const mongoose = require('mongoose');
 const { Client, GatewayIntentBits } = require('discord.js');
 const { LavalinkManager } = require('lavalink-client');
-const { setupMusicEvents, handleMessage, handleInteraction } = require('./cogs/music');
+const { setupMusicEvents, handleMessage, handleInteraction, loadMusicChannels } = require('./cogs/music');
 
 // --- 1. Web Server (Render 포트 바인딩용) ---
 const app = express();
@@ -15,6 +16,22 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`[Web] 웹 서버가 실행 중입니다. (Port: ${PORT})`);
 });
+
+// --- 1.5 MongoDB 연결 (taean_music_bot_db) ---
+const MONGO_URI = process.env.MONGODB_URI;
+
+if (MONGO_URI) {
+    mongoose.connect(MONGO_URI, {
+        dbName: 'taean_music_bot_db' // 요청하신 데이터베이스 이름 지정
+    }).then(() => {
+        console.log('[DB] MongoDB (taean_music_bot_db) 연결 완료!');
+        loadMusicChannels(); // DB 연결 완료 후 채널 데이터 로드
+    }).catch(err => {
+        console.error('[DB] MongoDB 연결 실패:', err);
+    });
+} else {
+    console.warn('[DB] MONGODB_URI가 설정되지 않아 데이터베이스가 연동되지 않았습니다.');
+}
 
 // --- 2. Discord Client 설정 ---
 const client = new Client({
