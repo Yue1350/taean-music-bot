@@ -4,7 +4,9 @@ const mongoose = require('mongoose');
 // Mongoose 스키마 및 모델 정의 (음악 채널 저장용)
 const guildSettingsSchema = new mongoose.Schema({
     guildId: { type: String, required: true, unique: true },
-    channelId: { type: String, required: true }
+    channelId: { type: String, required: true },
+    idleMessageId: { type: String, default: null },
+    queueMessageId: { type: String, default: null }
 });
 const GuildSettings = mongoose.model('GuildSettings', guildSettingsSchema);
 
@@ -15,12 +17,14 @@ const playerIntervals = new Map();
 const isUpdatingMap = new Map();
 const queuePageMap = new Map();
 
-// 봇 시작 시 DB에서 음악 채널 데이터 로드
+// 봇 시작 시 DB에서 음악 채널 설정 및 메시지 ID 로드
 async function loadMusicChannels() {
     try {
         const docs = await GuildSettings.find({});
         for (const doc of docs) {
             musicChannels.set(doc.guildId, doc.channelId);
+            if (doc.idleMessageId) idleMessageMap.set(doc.guildId, doc.idleMessageId);
+            if (doc.queueMessageId) queueMessageMap.set(doc.guildId, doc.queueMessageId);
         }
         console.log(`[DB] ${docs.length}개의 음악 채널 설정을 DB에서 불러왔습니다.`);
     } catch (err) {
@@ -126,6 +130,7 @@ async function updateIdleMessage(channel, cleanAll = false) {
             } while (fetched && fetched.size >= 2);
             idleMessageMap.delete(channel.guild.id);
             queueMessageMap.delete(channel.guild.id);
+            await GuildSettings.updateOne({ guildId: channel.guild.id }, { idleMessageId: null, queueMessageId: null });
         }
 
         let qMsgId = queueMessageMap.get(channel.guild.id);
@@ -135,6 +140,7 @@ async function updateIdleMessage(channel, cleanAll = false) {
                 if (qMsg) await qMsg.delete().catch(() => {});
             } catch (e) {}
             queueMessageMap.delete(channel.guild.id);
+            await GuildSettings.updateOne({ guildId: channel.guild.id }, { queueMessageId: null });
         }
 
         const idleEmbed = new EmbedBuilder()
@@ -155,6 +161,7 @@ async function updateIdleMessage(channel, cleanAll = false) {
         } else {
             const sentMsg = await channel.send({ embeds: [idleEmbed], components: disabledRows, files: [file] });
             idleMessageMap.set(channel.guild.id, sentMsg.id);
+            await GuildSettings.updateOne({ guildId: channel.guild.id }, { idleMessageId: sentMsg.id });
         }
     } catch (e) {
         console.error(e);
@@ -226,12 +233,12 @@ async function updatePlayerMessage(player, client) {
         const progressBar = createProgressBar(position, duration);
         const timeText = `[${formatTime(position)} / ${formatTime(duration)}]`;
 
-        // 썸네일 URL 안전 처리 (모든 유튜브 영상 호환 hqdefault 적용)
+        // maxresdefault.jpg 통일 적용
         let artwork = null;
         if (currentTrack.info.uri) {
             const urlMatch = currentTrack.info.uri.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
             if (urlMatch && urlMatch[1]) {
-                artwork = `https://img.youtube.com/vi/${urlMatch[1]}/hqdefault.jpg`;
+                artwork = `https://img.youtube.com/vi/${urlMatch[1]}/maxresdefault.jpg`;
             }
         }
         if (!artwork) {
@@ -286,6 +293,7 @@ async function updatePlayerMessage(player, client) {
         } else {
             const sent = await channel.send({ embeds: [playEmbed], components: [row1, row2] });
             idleMessageMap.set(guild.id, sent.id);
+            await GuildSettings.updateOne({ guildId: guild.id }, { idleMessageId: sent.id });
         }
 
         let qMsgId = queueMessageMap.get(guild.id);
@@ -299,6 +307,7 @@ async function updatePlayerMessage(player, client) {
         } else {
             const sentQueue = await channel.send({ embeds: [queueEmbed], components: [queueRow] });
             queueMessageMap.set(guild.id, sentQueue.id);
+            await GuildSettings.updateOne({ guildId: guild.id }, { queueMessageId: sentQueue.id });
         }
     } finally {
         isUpdatingMap.set(guild.id, false);
