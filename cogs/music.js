@@ -226,16 +226,16 @@ async function updatePlayerMessage(player, client) {
         const progressBar = createProgressBar(position, duration);
         const timeText = `[${formatTime(position)} / ${formatTime(duration)}]`;
 
-        // 고화질 썸네일 우선 처리
+        // 썸네일 URL 안전 처리 (모든 유튜브 영상 호환 hqdefault 적용)
         let artwork = null;
         if (currentTrack.info.uri) {
             const urlMatch = currentTrack.info.uri.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
             if (urlMatch && urlMatch[1]) {
-                artwork = `https://img.youtube.com/vi/${urlMatch[1]}/maxresdefault.jpg`;
+                artwork = `https://img.youtube.com/vi/${urlMatch[1]}/hqdefault.jpg`;
             }
         }
         if (!artwork) {
-            artwork = currentTrack.info.artworkUrl;
+            artwork = currentTrack.info.artworkUrl || null;
         }
 
         const displayVolume = Math.round(player.volume * 2);
@@ -252,7 +252,7 @@ async function updatePlayerMessage(player, client) {
                 { name: '🔄 반복 모드', value: getLoopStatusText(player), inline: true },
                 { name: '\u200b', value: `${progressBar} \`${timeText}\``, inline: false }
             )
-            .setImage(artwork || null);
+            .setImage(artwork);
 
         const mode = player.repeatMode || player.loop || (player.trackRepeat ? 'track' : player.queueRepeat ? 'queue' : 'off');
         const isTrackLoop = mode === 'track' || mode === 'song' || mode === 1;
