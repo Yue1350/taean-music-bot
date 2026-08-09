@@ -1,9 +1,27 @@
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
 const mongoose = require('mongoose');
 const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
 const { LavalinkManager } = require('lavalink-client');
 const { setupMusicEvents, handleMessage, handleInteraction, loadMusicChannels } = require('./cogs/music');
+
+// --- 0. KeepAlive 서버 설정 ---
+function keepAlive() {
+    const server = http.createServer((req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Bot is running!');
+    });
+
+    const PORT = 8080;
+    
+    server.listen(PORT, '0.0.0.0', () => {
+        console.log(`웹 서버가 포트 8080번에서 실행 중이야!`);
+    });
+}
+
+// KeepAlive 함수 실행
+keepAlive();
 
 // --- 1. Web Server (Render 포트 바인딩용) ---
 const app = express();
