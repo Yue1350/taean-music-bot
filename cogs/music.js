@@ -226,12 +226,16 @@ async function updatePlayerMessage(player, client) {
         const progressBar = createProgressBar(position, duration);
         const timeText = `[${formatTime(position)} / ${formatTime(duration)}]`;
 
-        let artwork = currentTrack.info.artworkUrl;
-        if (!artwork && currentTrack.info.uri) {
+        // 고화질 썸네일 우선 처리
+        let artwork = null;
+        if (currentTrack.info.uri) {
             const urlMatch = currentTrack.info.uri.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
             if (urlMatch && urlMatch[1]) {
                 artwork = `https://img.youtube.com/vi/${urlMatch[1]}/maxresdefault.jpg`;
             }
+        }
+        if (!artwork) {
+            artwork = currentTrack.info.artworkUrl;
         }
 
         const displayVolume = Math.round(player.volume * 2);
