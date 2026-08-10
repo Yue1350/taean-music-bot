@@ -27,6 +27,17 @@ Discord.js v14 및 Lavalink client를 기반으로 동작하는 고성능 디스
   - `mongoose` (MongoDB ORM)
   - `express` & `http`
   - `dotenv`
-LAVA_PORT=2333
-LAVA_PASSWORD=youshallnotpass
-LAVA_SECURE=false
+
+---
+
+## 📂 프로젝트 구조
+
+```text
+.
+├── assets/
+│   └── music_idle.png        # 봇 대기 상태 표시용 이미지
+├── cogs/
+│   └── music.js              # 음악 이벤트, 슬래시 명령어, 버튼 반응 및 재생 핸들러 로직
+├── index.js                  # Express/KeepAlive 서버, DB 연결, Discord 클라이언트 및 Lavalink 초기화
+├── package.json              # 프로젝트 의존성 및 스크립트 정보
+└── README.md                 # 프로젝트 설명 문서
