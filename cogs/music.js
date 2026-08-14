@@ -233,7 +233,6 @@ async function updatePlayerMessage(player, client) {
         const progressBar = createProgressBar(position, duration);
         const timeText = `[${formatTime(position)} / ${formatTime(duration)}]`;
 
-        // maxresdefault.jpg 통일 적용
         let artwork = null;
         if (currentTrack.info.uri) {
             const urlMatch = currentTrack.info.uri.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
@@ -405,11 +404,15 @@ async function handleMessage(client, message) {
     try {
         const res = await player.search({ query }, message.author);
 
-        if (!res || !res.tracks || !res.tracks.length) return;
+        if (!res) return;
 
         if (res.loadType === 'playlist' || res.loadType === 'album') {
-            player.queue.add(res.tracks);
-        } else {
+            if (Array.isArray(res.tracks)) {
+                player.queue.add(res.tracks);
+            } else if (res.playlist && Array.isArray(res.playlist.tracks)) {
+                player.queue.add(res.playlist.tracks);
+            }
+        } else if (res.tracks && res.tracks.length > 0) {
             player.queue.add(res.tracks[0]);
         }
 
